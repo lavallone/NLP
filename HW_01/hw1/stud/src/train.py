@@ -21,7 +21,7 @@ class Trainer():
         # I need it for the validation phase where I compute macro f1 score
         self.val_label_true = [e["labels"] for e in [json.loads(line) for line in open(self.model.hparams.prefix_path+self.model.hparams.data_val, "r")]]
         
-    def train(self, train_dataloader, train_dataloader_list, val_dataloader, val_windows_each_sentence_list, epochs, version_name, wandb_log=True, early_stopping=True, early_stopping_mode = "max", early_stopping_patience = 0, model_checkpoint = True):
+    def train(self, train_dataloader, train_dataloader_list, val_dataloader, val_windows_each_sentence_list, epochs, version_name, wandb_log=True, early_stopping=True, early_stopping_mode="max", early_stopping_patience=0, model_checkpoint=True):
         print('>>>>>>>>>>>>>>>> Starting Training <<<<<<<<<<<<<<<<<<<')
         print()
         if train_dataloader_list is not None:

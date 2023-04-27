@@ -116,7 +116,7 @@ class EventDetModel(nn.Module):
         if not self.hparams.finetune_emb:
             if self.hparams.num_emb==1:
                 for param in self.embedding_layer.parameters():
-                    param.requires_grad = False 
+                    param.requires_grad = False
             else:
                 for param in self.embedding_layer_1.parameters():
                     param.requires_grad = False 
