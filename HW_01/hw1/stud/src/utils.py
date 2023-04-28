@@ -4,7 +4,7 @@ import random
 import numpy as np
 import matplotlib.pyplot as plt
 
-# function for plotting data --> three group because train/val/test
+# function for plotting data --> three groups because train/val/test
 def three_group_bar(columns, data, title, percentage=True): # both columns and data are lists (data is list of a single list)
     labels = columns
   
@@ -37,6 +37,19 @@ def three_group_bar(columns, data, title, percentage=True): # both columns and d
         rects3_labels = test
     
     ax.bar_label(rects2, rects2_labels, padding=5)
+
+def plot_histogram(sent_lengths_list):
+    sent_np = np.asarray(sent_lengths_list)
+    print("LENGHT SENTENCES STATISTICS:")
+    print(f"| mean: {sent_np.mean()}")
+    print(f"| std: {sent_np.std()}")
+    print(f"| min: {sent_np.min()}")
+    print(f"| max: {sent_np.max()}")
+
+    plt.figure(figsize=(8,8))
+    _ = plt.hist(sent_np, bins='auto', color = "gold", ec="orange")
+    plt.title("Sentence Lenghts Histogram") 
+    plt.show()
 
 def evaluation_pipeline():
     return

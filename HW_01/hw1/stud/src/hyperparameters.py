@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class Hparams:
     
-    # dataloader params
+    ## dataloader params
     data_train: str = "data/train.jsonl"
     data_val: str = "data/dev.jsonl"
     data_test: str = "data/test.jsonl"
@@ -32,7 +32,7 @@ class Hparams:
     POS_emb: bool = False
     positional_encode: bool = False
     
-    ## model paramrs
+    ## model params
     # embedding
     emb_folder: str = "model/embeddings/"
     vocab_size: int = 400009
