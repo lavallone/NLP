@@ -136,6 +136,6 @@ class Trainer():
             self.model.hparams.window_size = 40
             self.model.hparams.window_shift = 40
             val_label_pred = predict_function(self.model, self.device, self.val_label_true, val_dataloader, val_windows_each_sentence_list)
-            val_macro_f1 = f1_score(self.val_label_true, val_label_pred, average="macro", digits=4)
+            val_macro_f1 = f1_score(self.val_label_true, val_label_pred, average="macro")
                 
         return val_loss / len(val_dataloader), val_macro_f1
