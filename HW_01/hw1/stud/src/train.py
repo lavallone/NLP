@@ -24,8 +24,6 @@ class Trainer():
     def train(self, train_dataloader, train_dataloader_list, val_dataloader, val_windows_each_sentence_list, epochs, version_name, wandb_log=True, early_stopping=True, early_stopping_mode="max", early_stopping_patience=0, model_checkpoint=True):
         print('>>>>>>>>>>>>>>>> Starting Training <<<<<<<<<<<<<<<<<<<')
         print()
-        if train_dataloader_list is not None:
-            print('* MIXING WINDOWS STRATEGY ON *')
         
         self.model.to(self.device)
         valid_history = [(10.0, 0.0)]  # I need it for the early stopping mechanism
@@ -37,11 +35,12 @@ class Trainer():
             self.model.train()
             
             if train_dataloader_list is not None and epoch%self.model.hparams.change_window_each_epoch==0: # it means we want to use the strategy of 'mixing windows'
-                print(f"_PICKED DATALOADER NUMBER {random.randint(0,len(train_dataloader_list)-1)}_")
+                print(f"* PICKED DATALOADER NUMBER {random.randint(0,len(train_dataloader_list)-1)} *")
                 train_dataloader = train_dataloader_list[random.randint(0,len(train_dataloader_list)-1)]
             
             if self.model.hparams.finetune_emb and epoch == self.model.hparams.stop_train_emb: # freeze only the GloVe embeddings
-                print("______________FREEZE GLOVE EMBEDDING LAYER_______________")
+                print(" _________________________________________________________")
+                print("|______________FREEZE GLOVE EMBEDDING LAYER_______________|")
                 if self.model.hparams.num_emb == 1:
                     for param in self.model.embedding_layer.parameters():
                         param.requires_grad = False
