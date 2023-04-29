@@ -1,6 +1,10 @@
 import random
 import numpy as np
 import matplotlib.pyplot as plt
+from seqeval.metrics import classification_report
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from .models import predict_function
+from .data import EventDetDataset
 
 # function for plotting data --> three groups because train/val/test
 def three_group_bar(columns, data, title, percentage=True): # both columns and data are lists (data is list of a single list)
@@ -49,5 +53,15 @@ def plot_histogram(sent_lengths_list):
     plt.title("Sentence Lenghts Histogram") 
     plt.show()
 
-def evaluation_pipeline():
-    return
+def evaluation_pipeline(model, device, true_test_labels, test_sentences, test_dataloader, windows_each_sentence_list):
+    predict_test_labels = predict_function(model, device, test_sentences, test_dataloader, windows_each_sentence_list)
+    print(classification_report(true_test_labels, predict_test_labels, digits=4))
+
+    # plot confusion matrix
+    labels = list(EventDetDataset.label2id.keys())
+    true_test_labels = [e for sublist in true_test_labels for e in sublist] # need to flatten them for confusion matrix
+    predict_test_labels = [e for sublist in predict_test_labels for e in sublist]
+    conf_mat = confusion_matrix(true_test_labels, predict_test_labels, labels=labels, normalize="true")
+    conf_mat_disp = ConfusionMatrixDisplay(confusion_matrix=conf_mat, display_labels=labels)
+    _, ax = plt.subplots(figsize=(15,15))
+    conf_mat_disp.plot(ax=ax, xticks_rotation="vertical", cmap="summer")
