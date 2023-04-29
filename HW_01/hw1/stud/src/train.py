@@ -39,8 +39,8 @@ class Trainer():
                 train_dataloader = train_dataloader_list[random.randint(0,len(train_dataloader_list)-1)]
             
             if self.model.hparams.finetune_emb and epoch == self.model.hparams.stop_train_emb: # freeze only the GloVe embeddings
-                print(" _________________________________________________________")
-                print("|______________FREEZE GLOVE EMBEDDING LAYER_______________|")
+                print("_________________________________________________________")
+                print("______________FREEZE GLOVE EMBEDDING LAYER_______________\n")
                 if self.model.hparams.num_emb == 1:
                     for param in self.model.embedding_layer.parameters():
                         param.requires_grad = False
@@ -132,8 +132,8 @@ class Trainer():
                 val_loss += batch_loss.tolist()
             
             # we use this setting for validation phase
-            self.model.hparams.window_size = 40
-            self.model.hparams.window_shift = 40
+            self.model.hparams.window_size = 30
+            self.model.hparams.window_shift = 15
             val_label_pred = predict_function(self.model, self.device, self.val_label_true, val_dataloader, val_windows_each_sentence_list)
             val_macro_f1 = f1_score(self.val_label_true, val_label_pred, average="macro")
                 
