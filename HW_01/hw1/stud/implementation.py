@@ -71,6 +71,7 @@ class StudentModel(Model):
         pos_tokens = None
         if self.hparams.POS_emb:
             pos_tokens = pos_tagger(tokens)
+            print("| POS TAGS extracted! |\n")
         pred_dataset = EventDetDataset(tokens, None, pos_tokens, self.vocab, self.hparams, pred=True)
         pred_dataloader = DataLoader(pred_dataset, batch_size=self.hparams.batch_size, shuffle=False, num_workers=self.hparams.n_cpu, pin_memory=self.hparams.pin_memory, collate_fn=EventDetDataset.collate_batch)
         

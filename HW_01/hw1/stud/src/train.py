@@ -104,10 +104,10 @@ class Trainer():
                         
             if model_checkpoint:
                 current_max = torch.max(torch.tensor([e[1] for e in valid_history[:-1]])).item()
-                if valid_history[-1][1] > current_max: # I save the model into "../../model/checkpoints"
-                    if os.path.exists(f"../../model/checkpoints/{version_name}_f1_{round(current_max,4)}.pth"):
-                        os.remove(f"../../model/checkpoints/{version_name}_f1_{round(current_max,4)}.pth")
-                    torch.save(self.model.state_dict(), f"../../model/checkpoints/{version_name}_f1_{round(valid_history[-1][1],4)}.pth")
+                if valid_history[-1][1] > current_max: # I save the model into "model/checkpoints"
+                    if os.path.exists(f"{self.hparams.prefix_path}model/checkpoints/{version_name}_f1_{round(current_max,4)}.pth"):
+                        os.remove(f"{self.hparams.prefix_path}model/checkpoints/{version_name}_f1_{round(current_max,4)}.pth")
+                    torch.save(self.model.state_dict(), f"{self.hparams.prefix_path}model/checkpoints/{version_name}_f1_{round(valid_history[-1][1],4)}.pth")
                 
             print("_________________________________________________________")
 
