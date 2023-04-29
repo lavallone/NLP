@@ -4,6 +4,7 @@ from dataclasses import dataclass
 class Hparams:
     
     ## dataloader params
+    prefix_path: str = ""
     data_train: str = "data/train.jsonl"
     data_val: str = "data/dev.jsonl"
     data_test: str = "data/test.jsonl"
