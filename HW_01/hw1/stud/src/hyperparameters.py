@@ -24,10 +24,10 @@ class Hparams:
     load_pretrained_emb: bool = True
     finetune_emb: bool = True
     # embedding strategy
-    num_emb: int = 2 # o 1
+    num_emb: int = 2
     stop_train_emb: int = 20
     # mixing windows strategy
-    change_window_each_epoch: int = -1
+    change_window_each_epoch: int = 2
     
     ## extras
     POS_emb: bool = False
@@ -40,9 +40,9 @@ class Hparams:
     emb_dim: int = 300
     # lstm
     hidden_dim: int = 512
-    bidirectional: bool = False
-    num_layers: int = 1
-    dropout: float = 0
+    bidirectional: bool = True
+    num_layers: int = 5
+    dropout: float = 0.4
     # classifier
     mlp: bool = False
     num_classes: int = 11
