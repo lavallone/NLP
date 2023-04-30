@@ -178,6 +178,7 @@ class EventDetModel(nn.Module):
         
         if POS_x is not None:
             POS_emb = self.POS_emb(POS_x)
+            POS_emb = self.dropout(POS_emb)
             o = self.combination_layer(o + POS_emb)
         o = self.dropout(o)
             
