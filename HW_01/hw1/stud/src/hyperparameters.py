@@ -25,9 +25,9 @@ class Hparams:
     finetune_emb: bool = True
     # embedding strategy
     num_emb: int = 2
-    stop_train_emb: int = 20
+    stop_train_emb: int = 30
     # mixing windows strategy
-    change_window_each_epoch: int = 2
+    change_window_each_epoch: int = -1 #2
     
     ## extras
     POS_emb: bool = False
@@ -39,7 +39,7 @@ class Hparams:
     vocab_size: int = 400009
     emb_dim: int = 300
     # lstm
-    hidden_dim: int = 512
+    hidden_dim: int = 440
     bidirectional: bool = True
     num_layers: int = 5
     dropout: float = 0.4
