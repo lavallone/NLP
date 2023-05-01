@@ -33,7 +33,7 @@ def manipulate_preds(window_size, window_shift, all_flatten_preds, num_windows_e
 
 # this is the core function for making predictions
 def predict_function(model, device, sentences, data_loader, num_windows_each_sent_list):
-    # for being able to deal with sentences that have been split by the "slicing window mechanism"
+    # for being able to deal with sentences that have been split by the "sliding window mechanism"
     # 1) we keep all the  predictions made by model in a single flattened list...
     all_flatten_preds = []
     model.eval()

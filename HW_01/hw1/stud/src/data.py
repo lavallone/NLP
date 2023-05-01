@@ -45,7 +45,7 @@ def clean_tokens(data):
             if len(sample[i]) == 1 and sample[i]=="&":
                 sample[i] = sample[i].replace("&", "and")
     
-    # remove punctuactions/symbols and/or modify them in special tokens
+    # remove punctuations/symbols and/or modify them in special tokens
     for sample in data:
         for i in range(len(sample)):
             if len(sample[i]) > 1:
@@ -140,7 +140,7 @@ class EventDetDataset(Dataset):
             
 
     # in a "PytorchLightning fashion" I called it 'make_data' :)
-    # it embodies the "slicing windows mechanism" and the encoding phase
+    # it embodies the "sliding windows mechanism" and the encoding phase
     def make_data(self, tokens, labels, pos_tokens):
         data = []
         if labels is None:
