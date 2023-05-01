@@ -6,7 +6,7 @@ import random
 from seqeval.metrics import f1_score
 from .models import predict_function
 
-# I took inspiration from the function "train_and_evaluate" of the NLP Notebook #4 - POS tagging
+# I took inspiration from the "Trainer" class of the NLP Notebook #4 - POS tagging
 # It's however a standard Deep Learning class used to train and evaluate a model in pytorch.
 class Trainer():
 
@@ -132,8 +132,8 @@ class Trainer():
                 val_loss += batch_loss.tolist()
             
             # we use this setting for validation phase
-            self.model.hparams.window_size = 30
-            self.model.hparams.window_shift = 15
+            self.model.hparams.window_size = 40
+            self.model.hparams.window_shift = 40
             val_label_pred = predict_function(self.model, self.device, self.val_label_true, val_dataloader, val_windows_each_sentence_list)
             val_macro_f1 = f1_score(self.val_label_true, val_label_pred, average="macro")
                 

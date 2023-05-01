@@ -101,7 +101,7 @@ def pos_tagger(train_sentences):
 
 ########################################################################################################################
 
-# I took inspirantion from Notebook #4 - POS tagging
+# I took inspiration from the "POSTaggingDataset" class from Notebook #4 - POS tagging
 class EventDetDataset(Dataset):
     # static objects
     label2id={"B-SENTIMENT": 0, "I-SENTIMENT": 1, "B-SCENARIO": 2, "I-SCENARIO": 3, "B-CHANGE": 4, "I-CHANGE": 5,

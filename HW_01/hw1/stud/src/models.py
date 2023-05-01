@@ -18,6 +18,7 @@ def overlap_preds(l1, l2):
                 ris.append(e2)
     return ris+[None for _ in range(len(ris))] 
 
+# utility function for manipulating the output predictions when varying the windows size/shift!
 def manipulate_preds(window_size, window_shift, all_flatten_preds, num_windows_each_sent_list):
     overlap = window_size - window_shift
     current_idx = 0
@@ -30,6 +31,7 @@ def manipulate_preds(window_size, window_shift, all_flatten_preds, num_windows_e
         current_idx += (num_windows_each_sent*window_size) 
     return [e for e in all_flatten_preds if e is not None], [e-1 for e in num_windows_each_sent_list]
 
+# this is the core function for making predictions
 def predict_function(model, device, sentences, data_loader, num_windows_each_sent_list):
     # for being able to deal with sentences that have been split by the "slicing window mechanism"
     # 1) we keep all the  predictions made by model in a single flattened list...
@@ -94,7 +96,8 @@ class PositionalEncoder(nn.Module):
         x = x + pe
         return self.dropout(x)
 
-# I took inspiration from the "POSTaggerModel" model from NLP Notebook #4 - POS tagging
+# I took inspiration from the "POSTaggerModel" model from NLP Notebook #4 - POS tagging 
+# as a starting point for my implementation
 class EventDetModel(nn.Module):
     def __init__(self, hparams):
         super(EventDetModel, self).__init__()

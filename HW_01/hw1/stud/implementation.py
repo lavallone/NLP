@@ -63,9 +63,8 @@ class StudentModel(Model):
     def predict(self, tokens: List[List[str]]) -> List[List[str]]:
         # STUDENT: implement here your predict function
         # remember to respect the same order of tokens!
-        self.hparams.window_size = 40 # we use a window as large as possible for prediction phase!
+        self.hparams.window_size = 40
         self.hparams.window_shift = 40
-        self.hparams.batch_size = 32
         
         clean_tokens(tokens)
         pos_tokens = None
