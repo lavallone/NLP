@@ -33,4 +33,6 @@ class StudentModel(Model):
     def predict(self, tokens: List[List[str]]) -> List[List[str]]:
         # STUDENT: implement here your predict function
         # remember to respect the same order of tokens!
+        
+        # ho la funzione predict in model.py che fa la prediction restituendo gli indici batch per batch... quindi sfrutta quella!
         pass
