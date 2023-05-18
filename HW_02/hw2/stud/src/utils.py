@@ -7,7 +7,7 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 #from .data import EventDetDataset
 import json
 
-# utility function entirely taken from the 'evaluate.py' file of the Homework 2
+# utility function entirely taken from the 'evaluate.py' file of Homework 2
 def read_dataset(path):
     sentences_s, senses_s = [], []
     with open(path) as f:

@@ -26,7 +26,6 @@ def filter_sentences(train_items, min_sent_length=5, max_sent_length=85):
         assert len(item["instance_ids"].keys()) != 0
     return train_items
 
-
 ## MAPPING BETWEEN INPUT WORD INDEX AND BERT EMBEDDING INDECES
 def token2emb_idx(sense_idx, word_ids):
     ris = []
@@ -83,10 +82,10 @@ class WSD_DataModule(pl.LightningDataModule):
         self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
         # VAL
         clean_tokens(self.val_sentences)
-        self.data_val = CoarseWSD_Dataset(data_sentences=filter_sentences(self.val_sentences), data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+        self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
         # TEST
         clean_tokens(self.test_sentences)
-        self.data_test = CoarseWSD_Dataset(data_sentences=filter_sentences(self.test_sentences), data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+        self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
 
     def train_dataloader(self):
         return DataLoader(

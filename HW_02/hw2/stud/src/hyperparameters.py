@@ -15,7 +15,7 @@ class Hparams:
     pin_memory: bool = False # parameter to pin memory in dataloader
     
     ## train params
-    lr: float = 1e-3 # 2e-4 or 1e-3
+    lr: float = 2e-4 # 2e-4 or 1e-3
     min_lr: float = 1e-8 # min lr for ReduceLROnPlateau
     adam_eps: float = 1e-6 # term added to the denominator to improve numerical stability
     wd: float = 1e-6 # weight decay as regulation strategy

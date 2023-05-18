@@ -49,12 +49,12 @@ class WSD_Model(pl.LightningModule):
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr, eps=self.hparams.adam_eps, weight_decay=self.hparams.wd)
-        reduce_lr_on_plateau = ReduceLROnPlateau(optimizer, mode='min', verbose=True, min_lr=self.hparams.min_lr, patience=5)
+        reduce_lr_on_plateau = ReduceLROnPlateau(optimizer, mode='min', verbose=True, min_lr=self.hparams.min_lr, patience=3)
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": reduce_lr_on_plateau,
-                "monitor": 'loss',
+                "monitor": 'val_loss',
                 "frequency": 1
             },
         }
@@ -74,11 +74,11 @@ class WSD_Model(pl.LightningModule):
 
     def predict(self, batch):
         with torch.no_grad():
-            candidates = batch["labels"]
+            candidates = batch["candidates"]
             outputs = self(batch)
             ris = []
             for i in range(len(outputs)):
-                candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]))
+                candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]).to(self.device))
                 best_prediction = torch.argmax(candidates_pred, dim=0)
                 ris.append(candidates[i][best_prediction.item()])
             return ris # list of predicted senses (expressed in indices)
@@ -88,10 +88,10 @@ class WSD_Model(pl.LightningModule):
         outputs = self(batch)
         # LOSS
         val_loss = self.loss_function(outputs, labels)["loss"]
-        self.log("val_loss", val_loss, on_step=True, on_epoch=True, batch_size=self.hparams.batch_size)
+        self.log("val_loss", val_loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)
         # F1-SCORE
         # good practice to follow with pytorch_lightning for logging values each iteration!
   		# https://github.com/Lightning-AI/lightning/issues/4396
         preds = self.predict(batch)
-        self.val_micro_f1.update(preds, batch["labels"])
+        self.val_micro_f1.update(torch.tensor(preds), torch.tensor(labels))
         self.log("val_micro_f1", self.val_micro_f1, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)
