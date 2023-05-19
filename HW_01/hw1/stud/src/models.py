@@ -153,7 +153,7 @@ class EventDetModel(nn.Module):
 
 			nn.Linear(lstm_output_dim//4, self.hparams.num_classes),
 			nn.ReLU(inplace=True)
-		)
+		    )
         else:
             self.classifier = nn.Linear(lstm_output_dim, self.hparams.num_classes)
 

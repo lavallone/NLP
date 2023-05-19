@@ -18,13 +18,16 @@ class WSD_Model(pl.LightningModule):
             param.requires_grad = False
         # here we decide which parameters unfreeze
         if self.hparams.fine_tune_bert is True:
-            unfreeze = [10,11]
+            unfreeze = [9,10,11]
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
         
+        self.batch_norm = nn.BatchNorm1d(768)
+        self.hidden_MLP = nn.Linear(768, 768*2, bias=True)
+        self.silu = nn.SiLU(inplace=True)
         self.dropout = nn.Dropout(self.hparams.dropout)
-        self.classifier = nn.Linear(768, self.hparams.num_senses)
+        self.classifier = nn.Linear(768*2, self.hparams.num_senses, bias=True)
         
         self.val_micro_f1 = F1Score(task="multiclass", num_classes=self.hparams.num_senses, average="micro")
        
@@ -40,12 +43,14 @@ class WSD_Model(pl.LightningModule):
             first_idx = int(batch["sense_ids"][i][0])
             last_idx = int(batch["sense_ids"][i][-1] + 1)
             select_word_embs = embed_text[i, first_idx:last_idx, :]
-            word_emb = select_word_embs.sum(dim=0)
+            word_emb = select_word_embs.mean(dim=0) # try also sum
             encoder_output_list.append(word_emb)
         encoder_output = torch.stack(encoder_output_list, dim=0) # (batch, 768)
         
-        encoder_output = self.dropout(encoder_output)
-        return self.classifier(encoder_output)
+        encoder_output_norm = self.batch_norm(encoder_output)
+        hidden_output = self.dropout(self.silu(self.hidden_MLP(encoder_output_norm)))
+        
+        return self.classifier(hidden_output)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr, eps=self.hparams.adam_eps, weight_decay=self.hparams.wd)

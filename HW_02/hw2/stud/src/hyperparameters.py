@@ -10,12 +10,12 @@ class Hparams:
     data_val: str = "data/data/"+coarse_or_fine+"-grained/val_"+coarse_or_fine+"_grained.json" # validation dataset path
     data_test: str = "data/data/"+coarse_or_fine+"-grained/test_"+coarse_or_fine+"_grained.json" # test dataset path
     sense_map: str = "data/data/map/coarse_fine_defs_map.json"
-    batch_size: int = 128 # size of the batches
+    batch_size: int = 64 # size of the batches
     n_cpu: int = 8 # number of cpu threads to use for the dataloaders
     pin_memory: bool = False # parameter to pin memory in dataloader
     
     ## train params
-    lr: float = 2e-4 # 2e-4 or 1e-3
+    lr: float = 1e-4 # 2e-4 or 1e-3
     min_lr: float = 1e-8 # min lr for ReduceLROnPlateau
     adam_eps: float = 1e-6 # term added to the denominator to improve numerical stability
     wd: float = 1e-6 # weight decay as regulation strategy
@@ -28,9 +28,8 @@ class Hparams:
     # encoder (BERT-like)
     fine_tune_bert: bool = True # make BERT layers trainable or not
     # classifier
-    mlp: bool = False # use an MLP as classifier or not
     num_senses: int = 2158 # number of total coarse-senses
-    dropout: float = 0.4 # dropout value
+    dropout: float = 0.5 # dropout value
     
     # this is the path of my best model to give to the StudentModel!
-    student_weights_path: str = "model/checkpoints/BEST.pth" 
+    student_weights_path: str = "../../model/checkpoints/prova-epoch=01-val_micro_f1=0.8656.ckpt"

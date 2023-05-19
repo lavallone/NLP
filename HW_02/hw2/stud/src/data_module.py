@@ -41,25 +41,35 @@ def token2emb_idx(sense_idx, word_ids):
 ########################################################################################################################                
 
 class CoarseWSD_Dataset(Dataset):
-    def __init__(self, data_sentences, data_senses, sense2id_path, is_train=True):
+    def __init__(self, data_sentences, data_senses, sense2id_path):
         self.data = list()
         self.data_sentences = data_sentences
         self.data_senses = data_senses
         self.sense2id_path = sense2id_path
-        self.is_train = is_train
         self.make_data()
     
     def make_data(self):
         for i,d in enumerate(self.data_sentences):
-            for sense_idx, true_sense in zip(d["instance_ids"].keys(), self.data_senses[i]):
-                sense_idx = int(sense_idx)
-                input_sentence = " ".join(d["words"])
-                
-                # mapping between senses and their respective indeces
-                sense2id = json.load(open(self.sense2id_path, "r"))
-                true_sense = sense2id[true_sense[0]]
-                candidates = [ sense2id[c] for c in d["candidates"][str(sense_idx)] ]
-                self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "labels" : true_sense, "candidates" : candidates})
+            if self.data_senses is None: # we are predicting
+                for sense_idx in d["instance_ids"].keys():
+                    sense_idx = int(sense_idx)
+                    input_sentence = " ".join(d["words"])
+                    
+                    # mapping between senses and their respective indeces
+                    sense2id = json.load(open(self.sense2id_path, "r"))
+                    candidates = [ sense2id[c] for c in d["candidates"][str(sense_idx)] ]
+                    self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "candidates" : candidates})
+            
+            else: # we are not predicting   
+                for sense_idx, true_sense in zip(d["instance_ids"].keys(), self.data_senses[i]):
+                    sense_idx = int(sense_idx)
+                    input_sentence = " ".join(d["words"])
+                    
+                    # mapping between senses and their respective indeces
+                    sense2id = json.load(open(self.sense2id_path, "r"))
+                    true_sense = sense2id[true_sense[0]]
+                    candidates = [ sense2id[c] for c in d["candidates"][str(sense_idx)] ]
+                    self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "labels" : true_sense, "candidates" : candidates})
             
     def __len__(self):
         return len(self.data)
@@ -69,12 +79,17 @@ class CoarseWSD_Dataset(Dataset):
 
 
 class WSD_DataModule(pl.LightningDataModule):
-    def __init__(self, hparams: dict):
+    def __init__(self, hparams, is_predict=False, sentence_to_predict=None):
         super().__init__()
         self.save_hyperparameters(hparams, logger=False)
         self.train_sentences, self.train_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_train)
         self.val_sentences, self.val_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_val)
-        self.test_sentences, self.test_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_test)
+        
+        assert is_predict is True and sentence_to_predict is not None
+        if is_predict is True: # we are predicting trough the test.sh script
+            self.test_sentences, self.test_senses = (sentence_to_predict, None)
+        else:
+            self.test_sentences, self.test_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_test)
 
     def setup(self, stage=None):
         # TRAIN
