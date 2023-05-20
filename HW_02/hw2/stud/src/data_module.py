@@ -85,11 +85,13 @@ class WSD_DataModule(pl.LightningDataModule):
         self.train_sentences, self.train_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_train)
         self.val_sentences, self.val_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_val)
         
-        assert is_predict is True and sentence_to_predict is not None
-        if is_predict is True: # we are predicting trough the test.sh script
+        self.is_predict = is_predict
+        assert self.is_predict is False or sentence_to_predict is not None
+        if self.is_predict is True: # we are predicting trough the test.sh script
             self.test_sentences, self.test_senses = (sentence_to_predict, None)
-        else:
+        else: # we want to evaluate our model with 'evaluation_pipeline()'
             self.test_sentences, self.test_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_test)
+            self.test_senses_each_sentence = [len(sent["instance_ids"].keys()) for sent in self.test_sentences]
 
     def setup(self, stage=None):
         # TRAIN
@@ -125,15 +127,26 @@ class WSD_DataModule(pl.LightningDataModule):
         )
         
     def test_dataloader(self):
-        return DataLoader(
-            self.data_test,
-            batch_size=self.hparams.batch_size,
-            shuffle=False,
-            num_workers=self.hparams.n_cpu,
-            collate_fn = self.collate,
-            pin_memory=self.hparams.pin_memory,
-            persistent_workers=True
-        )
+        if self.is_predict is False:
+            return DataLoader(
+                self.data_test,
+                batch_size=self.hparams.batch_size,
+                shuffle=False,
+                num_workers=self.hparams.n_cpu,
+                collate_fn = self.collate,
+                pin_memory=self.hparams.pin_memory,
+                persistent_workers=True
+            )
+        else:
+            return DataLoader(
+                self.data_test,
+                batch_size=self.hparams.batch_size,
+                shuffle=False,
+                num_workers=self.hparams.n_cpu,
+                collate_fn = self.pred_collate,
+                pin_memory=self.hparams.pin_memory,
+                persistent_workers=True
+            )
     
     # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
     def collate(self, batch):
@@ -143,5 +156,15 @@ class WSD_DataModule(pl.LightningDataModule):
         # we now map token to embedding indices
         batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["labels"] for sample in batch]
+        batch_out["candidates"] = [sample["candidates"] for sample in batch]
+        return batch_out
+    
+    # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
+    def pred_collate(self, batch):
+        batch_out = dict()
+        tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        batch_out["input"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
+        # we now map token to embedding indices
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out

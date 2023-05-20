@@ -4,7 +4,7 @@ from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-def train_model(data, model, experiment_name, patience, metric_to_monitor, mode, epochs):
+def train_model(data, model, experiment_name, patience, metric_to_monitor, mode, epochs, precision):
     logger =  WandbLogger()
     logger.experiment.watch(model, log = None, log_freq = 100000)
     early_stop_callback = EarlyStopping(
@@ -17,7 +17,6 @@ def train_model(data, model, experiment_name, patience, metric_to_monitor, mode,
     trainer = Trainer(
         logger=logger, max_epochs=epochs, log_every_n_steps=1, gpus=n_gpus,
         callbacks=[early_stop_callback, checkpoint_callback],
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=0, precision=precision
         )
     trainer.fit(model, data)
-    return trainer

@@ -18,7 +18,7 @@ class WSD_Model(pl.LightningModule):
             param.requires_grad = False
         # here we decide which parameters unfreeze
         if self.hparams.fine_tune_bert is True:
-            unfreeze = [9,10,11]
+            unfreeze = [7,8,9,10,11]
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True

@@ -1,8 +1,11 @@
+import warnings
+warnings.filterwarnings("ignore")
 import random
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torchmetrics import F1Score
+from seqeval.metrics import classification_report
 from tqdm import tqdm
 import json
 
@@ -73,7 +76,24 @@ def plot_histogram(sent_lengths_list):
     plt.title("Sentence Lenghts Histogram") 
     plt.show()
 
-def evaluation_pipeline(model, data):
+def predict_aux(senses_each_sentence, preds_list):
+        tot_senses = 0
+        for e in senses_each_sentence:
+            tot_senses += e
+        assert tot_senses == len(preds_list)
+        
+        start_index_sense_list = []
+        i=0
+        for e in senses_each_sentence:
+            start_index_sense_list.append(i)
+            i+=e
+        
+        final_preds_list = []
+        for e1,e2 in zip(start_index_sense_list, senses_each_sentence):
+            final_preds_list.append(preds_list[e1:e1+e2])
+        return final_preds_list
+
+def evaluation_pipeline(model, data, additional_infos=False):
     test_micro_f1 = F1Score(task="multiclass", num_classes=model.hparams.num_senses, average="micro")
     
     model.eval()
@@ -85,4 +105,16 @@ def evaluation_pipeline(model, data):
             labels_list += batch["labels"]
         test_micro_f1 = test_micro_f1(torch.tensor(preds_list), torch.tensor(labels_list)).item()
         print()
-        print(f"| Micro F1 Score for test set: \t {round(test_micro_f1,3)} |")
+        print(f"| Micro F1 Score for test set:  {round(test_micro_f1,3)} |")
+        
+        # Even if seqeval library is used for token sequence classification task... I'll use it 
+        # by exploiting its visualization power and to understand the weaknesses of my model!
+        if additional_infos is  True:
+            id2sense = json.load(open(model.hparams.prefix_path+"model/files/id2sense.json", "r"))
+            for i in range(len(preds_list)):
+                preds_list[i] = id2sense[str(preds_list[i])]
+                labels_list[i] = id2sense[str(labels_list[i])]
+            preds_list = predict_aux(data.test_senses_each_sentence, preds_list)
+            labels_list = predict_aux(data.test_senses_each_sentence, labels_list)
+            print()
+            print(classification_report(labels_list, preds_list, digits=4))
