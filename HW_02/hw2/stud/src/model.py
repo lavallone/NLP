@@ -3,7 +3,7 @@ from torch import optim
 from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pytorch_lightning as pl
-from transformers import BertModel
+from transformers import BertModel, RobertaModel, DebertaModel
 from torchmetrics import F1Score
 
 
@@ -11,14 +11,24 @@ class WSD_Model(pl.LightningModule):
     def __init__(self, hparams):
         super(WSD_Model, self).__init__()
         self.save_hyperparameters(hparams)
-        self.encoder = BertModel.from_pretrained("bert-base-uncased")
+        if self.hparams.encoder_type == "bert":
+            self.encoder = BertModel.from_pretrained("bert-base-uncased")
+        elif self.hparams.encoder_type == "roberta":
+            self.encoder = RobertaModel.from_pretrained("roberta-base")
+        elif self.hparams.encoder_type == "deberta":
+            self.encoder = DebertaModel.from_pretrained("microsoft/deberta-base")
         
         # we set all parameters to be not trainable
         for param in self.encoder.parameters():
             param.requires_grad = False
         # here we decide which parameters unfreeze
         if self.hparams.fine_tune_bert is True:
-            unfreeze = [7,8,9,10,11]
+            if self.hparams.encoder_type == "bert":
+                unfreeze = [7,8,9,10,11]
+            elif self.hparams.encoder_type == "roberta":
+                unfreeze = [7,8,9,10,11]
+            elif self.hparams.encoder_type == "deberta":
+                unfreeze = [8,9,10,11]
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
@@ -33,7 +43,7 @@ class WSD_Model(pl.LightningModule):
        
     def forward(self, batch):
         text = batch["input"]
-        embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], output_hidden_states=True)
+        embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
         # I take the hidden representation of the last four layers of each token
         embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).sum(dim=0)
         
@@ -41,8 +51,13 @@ class WSD_Model(pl.LightningModule):
         encoder_output_list = []
         for i in range(len(batch["sense_ids"])):
             first_idx = int(batch["sense_ids"][i][0])
-            last_idx = int(batch["sense_ids"][i][-1] + 1)
-            select_word_embs = embed_text[i, first_idx:last_idx, :]
+            if self.hparams.use_POS:
+                pos_idx = int(batch["sense_ids"][i][-1])
+                last_idx = int(batch["sense_ids"][i][-2] + 1)
+                select_word_embs = embed_text[i, first_idx:last_idx, :] + embed_text[i, pos_idx, :]
+            else:
+                last_idx = int(batch["sense_ids"][i][-1] + 1)
+                select_word_embs = embed_text[i, first_idx:last_idx, :]
             word_emb = select_word_embs.mean(dim=0) # try also sum
             encoder_output_list.append(word_emb)
         encoder_output = torch.stack(encoder_output_list, dim=0) # (batch, 768)

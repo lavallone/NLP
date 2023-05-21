@@ -15,12 +15,13 @@ class Hparams:
     pin_memory: bool = False # parameter to pin memory in dataloader
     
     ## train params
-    lr: float = 2e-5 # 1e-5, 2e-5 or 1e-4
+    lr: float = 1e-5 # 1e-5, 2e-5 or 1e-4
     min_lr: float = 1e-8 # min lr for ReduceLROnPlateau
     adam_eps: float = 1e-6 # term added to the denominator to improve numerical stability
     wd: float = 1e-6 # weight decay as regulation strategy
     precision: int = 16
-    load_pretrained_emb: bool = True # load or not the pretrained word embeddings
+    use_lemmas: bool = False # use 'lemmas' as input sentences instead of 'words'
+    use_POS: bool = False # use POS tags as additional information for the input sequence
     
     ## extras
     
@@ -28,9 +29,10 @@ class Hparams:
     ## model params
     # encoder (BERT-like)
     fine_tune_bert: bool = True # make BERT layers trainable or not
+    encoder_type: str = "bert" # bert, roberta or deberta
     # classifier
     num_senses: int = 2158 # number of total coarse-senses
-    dropout: float = 0.4 # dropout value
+    dropout: float = 0.5 # dropout value
     
     # this is the path of my best model to give to the StudentModel!
     student_weights_path: str = "model/checkpoints/prova-epoch=05-val_micro_f1=0.8740_lr_2e-5.ckpt"

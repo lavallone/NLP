@@ -56,7 +56,7 @@ class StudentModel(Model):
                 preds_list += preds
                 
             # 1) let's first decode the predicted senses from indices to strings
-            id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/id2sense.json", "r"))
+            id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_id2sense.json", "r"))
             for i in range(len(preds_list)):
                 preds_list[i] = id2sense[str(preds_list[i])]
             

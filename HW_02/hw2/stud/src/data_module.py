@@ -3,7 +3,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from torch.utils.data import DataLoader, Dataset
 import pytorch_lightning as pl
 import json
-from transformers import BertTokenizer, BertTokenizerFast
+from transformers import BertTokenizerFast, RobertaTokenizerFast, DebertaTokenizerFast
 from .utils import read_dataset
 
 ######################################### UTILITY PREPROCESSING FUNCTIONS ##############################################
@@ -17,6 +17,13 @@ def clean_tokens(data): # very simple token cleaner (not needed to make big oper
             sample["words"][i] = sample["words"][i].replace("[", "(")
             sample["words"][i] = sample["words"][i].replace("]", ")")
             sample["words"][i] = sample["words"][i].encode("ascii", "ignore").decode()
+        for i in range(len(sample["lemmas"])): # do it also for lemmas!
+            sample["lemmas"][i] = sample["lemmas"][i].lower()
+            sample["lemmas"][i] = sample["lemmas"][i].replace(" ", "")
+            sample["lemmas"][i] = sample["lemmas"][i].replace("`", "'")
+            sample["lemmas"][i] = sample["lemmas"][i].replace("[", "(")
+            sample["lemmas"][i] = sample["lemmas"][i].replace("]", ")")
+            sample["lemmas"][i] = sample["lemmas"][i].encode("ascii", "ignore").decode()
                 
 ## FILTER SENTENCES
 def filter_sentences(train_items, min_sent_length=5, max_sent_length=85):
@@ -27,7 +34,8 @@ def filter_sentences(train_items, min_sent_length=5, max_sent_length=85):
     return train_items
 
 ## MAPPING BETWEEN INPUT WORD INDEX AND BERT EMBEDDING INDECES
-def token2emb_idx(sense_idx, word_ids):
+# (I also want to retrieve the index of the POS TAG)
+def token2emb_idx(sense_idx, word_ids, use_POS=False):
     ris = []
     i = 0
     for word_id in word_ids:
@@ -36,16 +44,26 @@ def token2emb_idx(sense_idx, word_ids):
         if word_id==sense_idx:
             ris.append(i)
         i+=1
+    if use_POS: # we append the POS tag index at the end of the list
+        i=1
+        for word_id in word_ids[1:]:
+            if word_id is None:
+                i+=1
+                break
+            i+=1
+        ris.append(i)        
     return ris
      
 ########################################################################################################################                
 
 class CoarseWSD_Dataset(Dataset):
-    def __init__(self, data_sentences, data_senses, sense2id_path):
+    def __init__(self, data_sentences, data_senses, sense2id_path, use_lemmas=False, use_POS=False):
         self.data = list()
         self.data_sentences = data_sentences
         self.data_senses = data_senses
         self.sense2id_path = sense2id_path
+        self.use_lemmas = use_lemmas
+        self.use_POS = use_POS
         self.make_data()
     
     def make_data(self):
@@ -53,7 +71,14 @@ class CoarseWSD_Dataset(Dataset):
             if self.data_senses is None: # we are predicting
                 for sense_idx in d["instance_ids"].keys():
                     sense_idx = int(sense_idx)
-                    input_sentence = " ".join(d["words"])
+                    if self.use_lemmas:
+                        sentence = " ".join(d["lemmas"])
+                    else:
+                        sentence = " ".join(d["words"])
+                    if self.use_POS:
+                        input_sentence = [sentence, d["pos_tags"][sense_idx].lower()]
+                    else:
+                        input_sentence = sentence
                     
                     # mapping between senses and their respective indeces
                     sense2id = json.load(open(self.sense2id_path, "r"))
@@ -68,7 +93,14 @@ class CoarseWSD_Dataset(Dataset):
             else: # we are not predicting   
                 for sense_idx, true_sense in zip(d["instance_ids"].keys(), self.data_senses[i]):
                     sense_idx = int(sense_idx)
-                    input_sentence = " ".join(d["words"])
+                    if self.use_lemmas:
+                        sentence = " ".join(d["lemmas"])
+                    else:
+                        sentence = " ".join(d["words"])
+                    if self.use_POS:
+                        input_sentence = [sentence, d["pos_tags"][sense_idx].lower()]
+                    else:
+                        input_sentence = sentence
                     
                     # mapping between senses and their respective indeces
                     sense2id = json.load(open(self.sense2id_path, "r"))
@@ -106,17 +138,17 @@ class WSD_DataModule(pl.LightningDataModule):
         if self.is_predict is True: # only prediction
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
         else:
             # TRAIN
             clean_tokens(self.train_sentences)
-            self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
             # VAL
             clean_tokens(self.val_sentences)
-            self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
 
     def train_dataloader(self):
         return DataLoader(
@@ -165,10 +197,15 @@ class WSD_DataModule(pl.LightningDataModule):
     # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
     def collate(self, batch):
         batch_out = dict()
-        tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        if self.hparams.encoder_type == "bert":
+            tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        elif self.hparams.encoder_type == "roberta":
+            tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+        elif self.hparams.encoder_type == "deberta":
+            tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
         batch_out["input"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i), self.hparams.use_POS) for i in range(len(batch))]
         batch_out["labels"] = [sample["labels"] for sample in batch]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
@@ -176,9 +213,14 @@ class WSD_DataModule(pl.LightningDataModule):
     # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
     def pred_collate(self, batch):
         batch_out = dict()
-        tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        if self.hparams.encoder_type == "bert":
+            tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased")
+        elif self.hparams.encoder_type == "roberta":
+            tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
+        elif self.hparams.encoder_type == "deberta":
+            tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
         batch_out["input"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i), self.hparams.use_POS) for i in range(len(batch))]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
