@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from torchmetrics import F1Score
-from seqeval.metrics import classification_report
+from sklearn.metrics import classification_report
 from tqdm import tqdm
 import json
 
@@ -107,14 +107,14 @@ def evaluation_pipeline(model, data, additional_infos=False):
         print()
         print(f"| Micro F1 Score for test set:  {round(test_micro_f1,3)} |")
         
-        # Even if seqeval library is used for token sequence classification task... I'll use it 
-        # by exploiting its visualization power and to understand the weaknesses of my model!
-        if additional_infos is  True:
+        # If I want to have/display additional infos about my models performance and 
+        # to understand their weaknesses!
+        if additional_infos is True:
             id2sense = json.load(open(model.hparams.prefix_path+"model/files/id2sense.json", "r"))
             for i in range(len(preds_list)):
                 preds_list[i] = id2sense[str(preds_list[i])]
                 labels_list[i] = id2sense[str(labels_list[i])]
-            preds_list = predict_aux(data.test_senses_each_sentence, preds_list)
-            labels_list = predict_aux(data.test_senses_each_sentence, labels_list)
             print()
             print(classification_report(labels_list, preds_list, digits=4))
+            output_dict = classification_report(labels_list, preds_list, digits=4, output_dict=True)
+            return output_dict # in order to be able to make some statistics

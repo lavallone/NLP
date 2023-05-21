@@ -83,6 +83,9 @@ class WSD_Model(pl.LightningModule):
             outputs = self(batch)
             ris = []
             for i in range(len(outputs)):
+                if 2158 in candidates[i]: # if in the candidates set there is at least one <UNK> sense, we directly predict <UNK> !
+                    ris.append(2158)
+                    continue
                 candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]).to(self.device))
                 best_prediction = torch.argmax(candidates_pred, dim=0)
                 ris.append(candidates[i][best_prediction.item()])

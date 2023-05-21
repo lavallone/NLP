@@ -57,7 +57,12 @@ class CoarseWSD_Dataset(Dataset):
                     
                     # mapping between senses and their respective indeces
                     sense2id = json.load(open(self.sense2id_path, "r"))
-                    candidates = [ sense2id[c] for c in d["candidates"][str(sense_idx)] ]
+                    candidates = []
+                    for c in d["candidates"][str(sense_idx)]:
+                        if c not in sense2id.keys():
+                            candidates.append(sense2id["<UNK>"]) # <UNK> INDEX (2158)
+                        else:
+                            candidates.append(sense2id[c])
                     self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "candidates" : candidates})
             
             else: # we are not predicting   
@@ -68,7 +73,12 @@ class CoarseWSD_Dataset(Dataset):
                     # mapping between senses and their respective indeces
                     sense2id = json.load(open(self.sense2id_path, "r"))
                     true_sense = sense2id[true_sense[0]]
-                    candidates = [ sense2id[c] for c in d["candidates"][str(sense_idx)] ]
+                    candidates = []
+                    for c in d["candidates"][str(sense_idx)]:
+                        if c not in sense2id.keys():
+                            candidates.append(sense2id["<UNK>"]) # <UNK> INDEX (2158)
+                        else:
+                            candidates.append(sense2id[c])
                     self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "labels" : true_sense, "candidates" : candidates})
             
     def __len__(self):
@@ -82,27 +92,31 @@ class WSD_DataModule(pl.LightningDataModule):
     def __init__(self, hparams, is_predict=False, sentence_to_predict=None):
         super().__init__()
         self.save_hyperparameters(hparams, logger=False)
-        self.train_sentences, self.train_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_train)
-        self.val_sentences, self.val_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_val)
         
         self.is_predict = is_predict
         assert self.is_predict is False or sentence_to_predict is not None
         if self.is_predict is True: # we are predicting trough the test.sh script
             self.test_sentences, self.test_senses = (sentence_to_predict, None)
         else: # we want to evaluate our model with 'evaluation_pipeline()'
+            self.train_sentences, self.train_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_train)
+            self.val_sentences, self.val_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_val)
             self.test_sentences, self.test_senses = read_dataset(self.hparams.prefix_path+self.hparams.data_test)
-            self.test_senses_each_sentence = [len(sent["instance_ids"].keys()) for sent in self.test_sentences]
 
     def setup(self, stage=None):
-        # TRAIN
-        clean_tokens(self.train_sentences)
-        self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
-        # VAL
-        clean_tokens(self.val_sentences)
-        self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
-        # TEST
-        clean_tokens(self.test_sentences)
-        self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+        if self.is_predict is True: # only prediction
+            # TEST
+            clean_tokens(self.test_sentences)
+            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+        else:
+            # TRAIN
+            clean_tokens(self.train_sentences)
+            self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            # VAL
+            clean_tokens(self.val_sentences)
+            self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
+            # TEST
+            clean_tokens(self.test_sentences)
+            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/sense2id.json")
 
     def train_dataloader(self):
         return DataLoader(

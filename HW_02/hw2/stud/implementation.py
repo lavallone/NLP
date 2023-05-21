@@ -41,7 +41,7 @@ class StudentModel(Model):
         self.hparams.prefix_path = ""
         self.model = WSD_Model.load_from_checkpoint(self.hparams.prefix_path+self.hparams.student_weights_path, strict=False, device=self.device)
     
-    def predict(self, sentences: List[Dict]) -> List[List[str]]: # I changed from List[List[str]] to List[Dict] because our dataset is a list of dictionaries!
+    def predict(self, sentences: List[Dict]) -> List[List[str]]: # (I changed from List[List[str]] to List[Dict] because our dataset is a list of dictionaries!)
         # STUDENT: implement here your predict function
         # remember to respect the same order of tokens!
         self.model.hparams.prefix_path = ""
