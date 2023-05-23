@@ -35,7 +35,7 @@ def filter_sentences(train_items, min_sent_length=5, max_sent_length=85):
 
 ## MAPPING BETWEEN INPUT WORD INDEX AND BERT EMBEDDING INDECES
 # (I also want to retrieve the index of the POS TAG)
-def token2emb_idx(sense_idx, word_ids, use_POS=False):
+def token2emb_idx(sense_idx, word_ids):
     ris = []
     i = 0
     for word_id in word_ids:
@@ -43,20 +43,12 @@ def token2emb_idx(sense_idx, word_ids, use_POS=False):
             break
         if word_id==sense_idx:
             ris.append(i)
-        i+=1
-    if use_POS: # we append the POS tag index at the end of the list
-        i=1
-        for word_id in word_ids[1:]:
-            if word_id is None:
-                i+=1
-                break
-            i+=1
-        ris.append(i)        
+        i+=1       
     return ris
      
 ########################################################################################################################                
 
-class CoarseWSD_Dataset(Dataset):
+class WSD_Dataset(Dataset):
     def __init__(self, data_sentences, data_senses, sense2id_path, use_lemmas=False, use_POS=False):
         self.data = list()
         self.data_sentences = data_sentences
@@ -138,17 +130,17 @@ class WSD_DataModule(pl.LightningDataModule):
         if self.is_predict is True: # only prediction
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
+            self.data_test = WSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
         else:
             # TRAIN
             clean_tokens(self.train_sentences)
-            self.data_train = CoarseWSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
+            self.data_train = WSD_Dataset(data_sentences=filter_sentences(self.train_sentences), data_senses=self.train_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
             # VAL
             clean_tokens(self.val_sentences)
-            self.data_val = CoarseWSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
+            self.data_val = WSD_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = CoarseWSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
+            self.data_test = WSD_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", use_lemmas=self.hparams.use_lemmas, use_POS=self.hparams.use_POS)
 
     def train_dataloader(self):
         return DataLoader(
@@ -205,7 +197,7 @@ class WSD_DataModule(pl.LightningDataModule):
             tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
         batch_out["input"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i), self.hparams.use_POS) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["labels"] for sample in batch]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
@@ -221,6 +213,6 @@ class WSD_DataModule(pl.LightningDataModule):
             tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
         batch_out["input"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i), self.hparams.use_POS) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out

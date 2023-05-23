@@ -29,51 +29,45 @@ def read_dataset(path):
     assert len(sentences_s) == len(senses_s)
     return sentences_s, senses_s
 
-# function for plotting data --> three groups because train/val/test
-def three_group_bar(columns, data, title, percentage=True):
+# function for plotting data
+def one_group_bar(columns, data, title):
     labels = columns
-  
-    train = data[0]
-    val = data[1]
-    test = data[2]
-  
+    data = data[0]
     color_list = []
     for _ in range(len(data)):
         color = [random.randrange(0, 255)/255, random.randrange(0, 255)/255, random.randrange(0, 255)/255, 1]
         color_list.append(color)
         
     x = np.arange(len(labels))
-    width = 0.15  # the width of the bars
-    fig, ax = plt.subplots(figsize=(12, 5), layout='constrained')
-    rects1 = ax.bar(x - width, train, width, label='Train', color=color_list[0])
-    rects2 = ax.bar(x, val, width, label='Val', color=color_list[1])
-    rects3 = ax.bar(x + width, test, width, label='Test', color=color_list[2])
+    width = 0.5  # the width of the bars
+    _, ax = plt.subplots(figsize=(12, 5), layout='constrained')
+    rects = ax.bar(x, data, width, color=color_list)
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title(title)
-    ax.set_xticks(x, labels)
-    ax.legend()
-    if percentage:
-        rects1_labels = [('%.4f' % i) + "%" for i in train]
-        rects2_labels = [('%.4f' % i) + "%" for i in val]
-        rects3_labels = [('%.4f' % i) + "%" for i in test]
+    ax.set_xticks(x, labels, rotation="vertical")
+    ax.bar_label(rects, padding=3)
+
+def plot_histogram(values_list, multiple=False, title="Sentence Lenghts Histogram", color="gold", ec="orange"):
+    values_np = np.asarray(values_list)
+
+    if multiple: # we expect 'values_np' to be a list of lists
+        fig = plt.figure(figsize=(11,3))
+        l = ["train", "val", "test"]
+        for i in range(3):
+            n = "13" + str(i+1)
+            fig.add_subplot(int(n)).hist(values_np[i], bins='auto', label=l[i], color=color, ec=ec)
+            plt.legend()
+            if i==1:
+                plt.title(title)
     else:
-        rects1_labels = train
-        rects2_labels = val
-        rects3_labels = test
-    
-    ax.bar_label(rects2, rects2_labels, padding=5)
-
-def plot_histogram(sent_lengths_list):
-    sent_np = np.asarray(sent_lengths_list)
-    print("LENGHT SENTENCES STATISTICS:")
-    print(f"| mean: {sent_np.mean()}")
-    print(f"| std: {sent_np.std()}")
-    print(f"| min: {sent_np.min()}")
-    print(f"| max: {sent_np.max()}")
-
-    plt.figure(figsize=(8,8))
-    _ = plt.hist(sent_np, bins='auto', color = "gold", ec="orange")
-    plt.title("Sentence Lenghts Histogram") 
+        print("STATISTICS:")
+        print(f"| mean: {values_np.mean()}")
+        print(f"| std: {values_np.std()}")
+        print(f"| min: {values_np.min()}")
+        print(f"| max: {values_np.max()}")
+        plt.figure(figsize=(7,7))
+        plt.hist(values_np, bins='auto', color=color, ec=ec)
+        plt.title(title)
     plt.show()
 
 def predict_aux(senses_each_sentence, preds_list):
@@ -105,12 +99,12 @@ def evaluation_pipeline(model, data, additional_infos=False):
             labels_list += batch["labels"]
         test_micro_f1 = test_micro_f1(torch.tensor(preds_list), torch.tensor(labels_list)).item()
         print()
-        print(f"| Micro F1 Score for test set:  {round(test_micro_f1,3)} |")
+        print(f"| Micro F1 Score for test set:  {round(test_micro_f1,4)} |")
         
         # If I want to have/display additional infos about my models performance and 
         # to understand their weaknesses!
         if additional_infos is True:
-            id2sense = json.load(open(model.hparams.prefix_path+"model/files/id2sense.json", "r"))
+            id2sense = json.load(open(model.hparams.prefix_path+"model/files/"+model.hparams.coarse_or_fine+"_id2sense.json", "r"))
             for i in range(len(preds_list)):
                 preds_list[i] = id2sense[str(preds_list[i])]
                 labels_list[i] = id2sense[str(labels_list[i])]

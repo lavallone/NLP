@@ -24,20 +24,23 @@ class WSD_Model(pl.LightningModule):
         # here we decide which parameters unfreeze
         if self.hparams.fine_tune_bert is True:
             if self.hparams.encoder_type == "bert":
-                unfreeze = [7,8,9,10,11]
+                unfreeze = [6,7,8,9,10,11] # (if we unfreeze more layers it is not guaranteed that the perforomance will improve!)
             elif self.hparams.encoder_type == "roberta":
-                unfreeze = [7,8,9,10,11]
+                unfreeze = [10,11] # 7,8,9
             elif self.hparams.encoder_type == "deberta":
-                unfreeze = [8,9,10,11]
+                unfreeze = [10,11] # 8,9
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
         
         self.batch_norm = nn.BatchNorm1d(768)
-        self.hidden_MLP = nn.Linear(768, 768*2, bias=True)
-        self.silu = nn.SiLU(inplace=True)
+        self.hidden_MLP = nn.Linear(768, self.hparams.hidden_dim, bias=True)
+        if self.hparams.act_fun == "relu":
+            self.act_fun = nn.ReLU(inplace=True)
+        if self.hparams.act_fun == "silu":
+            self.act_fun = nn.SiLU(inplace=True)
         self.dropout = nn.Dropout(self.hparams.dropout)
-        self.classifier = nn.Linear(768*2, self.hparams.num_senses, bias=True)
+        self.classifier = nn.Linear(self.hparams.hidden_dim, self.hparams.num_senses, bias=False) # final linear projection with no bias
         
         self.val_micro_f1 = F1Score(task="multiclass", num_classes=self.hparams.num_senses, average="micro")
        
@@ -45,25 +48,23 @@ class WSD_Model(pl.LightningModule):
         text = batch["input"]
         embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
         # I take the hidden representation of the last four layers of each token
-        embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).sum(dim=0)
+        if self.hparams.sum_or_mean == "sum":
+            embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).sum(dim=0)
+        elif self.hparams.sum_or_mean == "mean":
+            embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).mean(dim=0)
         
         # I select the embeddings of the word we want to disambiguate and take their average! (for each item in the batch)
         encoder_output_list = []
         for i in range(len(batch["sense_ids"])):
             first_idx = int(batch["sense_ids"][i][0])
-            if self.hparams.use_POS:
-                pos_idx = int(batch["sense_ids"][i][-1])
-                last_idx = int(batch["sense_ids"][i][-2] + 1)
-                select_word_embs = embed_text[i, first_idx:last_idx, :] + embed_text[i, pos_idx, :]
-            else:
-                last_idx = int(batch["sense_ids"][i][-1] + 1)
-                select_word_embs = embed_text[i, first_idx:last_idx, :]
-            word_emb = select_word_embs.mean(dim=0) # try also sum
+            last_idx = int(batch["sense_ids"][i][-1] + 1)
+            select_word_embs = embed_text[i, first_idx:last_idx, :]
+            word_emb = select_word_embs.mean(dim=0)
             encoder_output_list.append(word_emb)
         encoder_output = torch.stack(encoder_output_list, dim=0) # (batch, 768)
         
         encoder_output_norm = self.batch_norm(encoder_output)
-        hidden_output = self.dropout(self.silu(self.hidden_MLP(encoder_output_norm)))
+        hidden_output = self.dropout(self.act_fun(self.hidden_MLP(encoder_output_norm)))
         
         return self.classifier(hidden_output)
 
