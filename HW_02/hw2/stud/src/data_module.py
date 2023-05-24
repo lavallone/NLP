@@ -34,7 +34,6 @@ def filter_sentences(train_items, min_sent_length=5, max_sent_length=85):
     return train_items
 
 ## MAPPING BETWEEN INPUT WORD INDEX AND BERT EMBEDDING INDECES
-# (I also want to retrieve the index of the POS TAG)
 def token2emb_idx(sense_idx, word_ids):
     ris = []
     i = 0

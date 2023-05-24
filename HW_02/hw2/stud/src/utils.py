@@ -45,7 +45,7 @@ def one_group_bar(columns, data, title):
     # Add some text for labels, title and custom x-axis tick labels, etc.
     ax.set_title(title)
     ax.set_xticks(x, labels, rotation="vertical")
-    ax.bar_label(rects, padding=3)
+    #ax.bar_label(rects, padding=3)
 
 def plot_histogram(values_list, multiple=False, title="Sentence Lenghts Histogram", color="gold", ec="orange"):
     values_np = np.asarray(values_list)
