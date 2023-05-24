@@ -23,7 +23,12 @@ class Hparams:
     use_lemmas: bool = False # use 'lemmas' as input sentences instead of 'words'
     use_POS: bool = False # use POS tags as additional information for the input sequence
     
-    ## extras
+    ## fine vs coarse
+    coarse_loss_oriented: bool = False # modify loss when training a fine-grained model to positively reward correct coarse-grained predictions!
+    predict_coarse_with_fine: bool = False # use a fine-grained model to predict coarse-grained senses!
+    predict_fine_with_coarse_filter: bool = False # use a coarse-grained model to filter out fine-grained predictions and help the fine-grained model! 
+    
+    ## GLOSSES
     
     
     ## model params
