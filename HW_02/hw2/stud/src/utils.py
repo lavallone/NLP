@@ -87,16 +87,61 @@ def predict_aux(senses_each_sentence, preds_list):
             final_preds_list.append(preds_list[e1:e1+e2])
         return final_preds_list
 
-def evaluation_pipeline(model, data, additional_infos=False):
+# when predicting using glosses I cannot reason considering single batches!
+# That's because the sense candidates could be on different batches and the 
+# output comparison would be impossible!
+def gloss_predict(model, data, coarse_or_fine):
+    outputs_list = []
+    for batch in tqdm(data.test_dataloader()):
+        outputs = model(batch)
+        for i in range(len(outputs)):
+            out = torch.max(outputs[i], dim=0)
+            outputs_list.append( (batch["ids"][i], batch["synsets"][i], float(out.item())) )
+    # outputs_list is a list in this form --> [ (id, sigmoid_output), ...] for example [("d014.s014.t000", 0.67), ...]
+    
+    grouped_outputs_list = []
+    id_list = {"outputs" : [], "synsets" : []}
+    current_id = outputs_list[0][0]
+    for (id,synset,out) in outputs_list:
+        if id == current_id:
+            id_list["outputs"].append(out)
+            id_list["synsets"].append(synset)
+        else:
+            current_id = id
+            grouped_outputs_list.append(id_list)
+            id_list = {"outputs" : [out], "synsets" : [synset]}
+        
+    preds_list = []
+    for e in grouped_outputs_list:
+        i = torch.argmax(torch.tensor(e["outputs"]), dim=0)
+        predicted_sense = e["synsets"][int(i.item())]
+        preds_list.append(predicted_sense)
+    
+    # if we predicted fine-grained senses we need to retrieve the coarse-grained ones!
+    if coarse_or_fine == "fine":
+        fine2coarse = json.load(open(model.hparams.prefix_path+"model/files/fine2coarse.json", "r"))
+        preds_list = [fine2coarse[e] for e in preds_list]
+
+    return preds_list
+
+def evaluation_pipeline(model, data, additional_infos=False, use_gloss=False):
     test_micro_f1 = F1Score(task="multiclass", num_classes=model.hparams.num_senses, average="micro")
     
     model.eval()
     with torch.no_grad():
         preds_list, labels_list = [], []
-        for batch in tqdm(data.test_dataloader()):
-            preds = model.predict(batch)
-            preds_list += preds
-            labels_list += batch["labels"]
+        if use_gloss is False:
+            for batch in tqdm(data.test_dataloader()):
+                preds = model.predict(batch)
+                preds_list += preds
+                labels_list += batch["labels"]
+        else:
+            for batch in tqdm(data.test_dataloader()):
+                for i in range(batch["labels"]):
+                    if batch["labels"][i] == 1:
+                        labels_list.append(batch["synsets"][i])
+            preds_list = gloss_predict(model, data, model.hparams.coarse_or_fine)
+        
         test_micro_f1 = test_micro_f1(torch.tensor(preds_list), torch.tensor(labels_list)).item()
         print()
         print(f"| Micro F1 Score for test set:  {round(test_micro_f1,4)} |")
@@ -104,10 +149,11 @@ def evaluation_pipeline(model, data, additional_infos=False):
         # If I want to have/display additional infos about my models performance and 
         # to understand their weaknesses!
         if additional_infos is True:
-            id2sense = json.load(open(model.hparams.prefix_path+"model/files/"+model.hparams.coarse_or_fine+"_id2sense.json", "r"))
-            for i in range(len(preds_list)):
-                preds_list[i] = id2sense[str(preds_list[i])]
-                labels_list[i] = id2sense[str(labels_list[i])]
+            if use_gloss is False:
+                id2sense = json.load(open(model.hparams.prefix_path+"model/files/"+model.hparams.coarse_or_fine+"_id2sense.json", "r"))
+                for i in range(len(preds_list)):
+                    preds_list[i] = id2sense[str(preds_list[i])]
+                    labels_list[i] = id2sense[str(labels_list[i])]
             print()
             print(classification_report(labels_list, preds_list, digits=4))
             output_dict = classification_report(labels_list, preds_list, digits=4, output_dict=True)

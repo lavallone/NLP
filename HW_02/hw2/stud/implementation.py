@@ -5,7 +5,7 @@ from model import Model
 from stud.src.hyperparameters import Hparams
 from stud.src.model import WSD_Model
 from stud.src.data_module import WSD_DataModule
-from stud.src.utils import predict_aux
+from stud.src.utils import predict_aux, gloss_predict
 import torch
 import json
 
@@ -51,14 +51,17 @@ class StudentModel(Model):
         self.model.eval()
         with torch.no_grad():
             preds_list = []
-            for batch in data.test_dataloader():
-                preds = self.model.predict(batch)
-                preds_list += preds
-                
-            # 1) let's first decode the predicted senses from indices to strings
-            id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_id2sense.json", "r"))
-            for i in range(len(preds_list)):
-                preds_list[i] = id2sense[str(preds_list[i])]
+            if self.model.use_gloss is False:
+                for batch in data.test_dataloader():
+                    preds = self.model.predict(batch)
+                    preds_list += preds
+                    
+                # 1) let's first decode the predicted senses from indices to strings
+                id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_id2sense.json", "r"))
+                for i in range(len(preds_list)):
+                    preds_list[i] = id2sense[str(preds_list[i])]
+            else:
+                preds_list = gloss_predict(self.model, data, self.model.hparams.coarse_or_fine)
             
             # 2) now I have a unique list of predictions --> I need it to create a  list of lists where each
             #                                                sublist contains the sense of the words of the same sentence!

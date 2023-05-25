@@ -6,6 +6,7 @@ class Hparams:
     ## dataloader params
     prefix_path: str = "../../"
     coarse_or_fine: str = "coarse"
+    use_gloss: bool = False
     data_train: str = "data/"+coarse_or_fine+"-grained/train_"+coarse_or_fine+"_grained.json" # train dataset path
     data_val: str = "data/"+coarse_or_fine+"-grained/val_"+coarse_or_fine+"_grained.json" # validation dataset path
     data_test: str = "data/"+coarse_or_fine+"-grained/test_"+coarse_or_fine+"_grained.json" # test dataset path
