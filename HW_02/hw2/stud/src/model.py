@@ -5,7 +5,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pytorch_lightning as pl
 from transformers import BertModel, RobertaModel, DebertaModel
 from torchmetrics import F1Score
-import json  
+import json
 
 class WSD_Model(pl.LightningModule):
     def __init__(self, hparams, coarse_filter_model=None):
@@ -26,9 +26,9 @@ class WSD_Model(pl.LightningModule):
             if self.hparams.encoder_type == "bert":
                 unfreeze = [6,7,8,9,10,11] # (if we unfreeze more layers it is not guaranteed that the perforomance will improve!)
             elif self.hparams.encoder_type == "roberta":
-                unfreeze = [10,11] # 7,8,9
+                unfreeze = [7,8,9,10,11]
             elif self.hparams.encoder_type == "deberta":
-                unfreeze = [10,11] # 8,9
+                unfreeze = [9,10,11]
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
@@ -52,10 +52,15 @@ class WSD_Model(pl.LightningModule):
             self.coarse_filter_model = coarse_filter_model
             self.coarse2fine = json.load(open(self.hparams.prefix_path+self.hparams.sense_map, "r"))
             self.fine_sense2id = json.load(open(self.hparams.prefix_path+"model/files/fine_sense2id.json", "r"))
+        
+        self.first_sense_statistic = 0 # I count all the time the model predict the first sense (the most frequent one) without considering the sets with only one candidate!   
        
     def forward(self, batch):
         text = batch["inputs"]
-        embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
+        if self.hparams.encoder_type == "roberta": # roberta doesn't need "token_type_ids"
+            embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], output_hidden_states=True)
+        else:
+            embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
         # I take the hidden representation of the last four layers of each token
         if self.hparams.sum_or_mean == "sum":
             embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).sum(dim=0)
@@ -120,7 +125,7 @@ class WSD_Model(pl.LightningModule):
         return {'loss': loss['loss']}
 
     def predict(self, batch):
-        assert self.hparams.predict_coarse_with_fine == False or self.hparams.coarse_or_fine == "coarse"
+        assert self.hparams.predict_coarse_with_fine == False or self.hparams.coarse_or_fine == "fine"
         assert self.hparams.predict_fine_with_coarse_filter == False or self.hparams.coarse_or_fine == "fine"
         with torch.no_grad():
             candidates = batch["candidates"]
@@ -144,6 +149,8 @@ class WSD_Model(pl.LightningModule):
                         continue
                     candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]).to(self.device))
                     best_prediction = torch.argmax(candidates_pred, dim=0)
+                    if best_prediction == 0 and len(candidates[i]) != 1:
+                        self.first_sense_statistic += 1
                     if self.hparams.predict_coarse_with_fine == True:
                         ris.append(self.fine2coarse[ self.fine_id2sense[candidates[i][best_prediction.item()]] ])
                     else:
@@ -161,12 +168,12 @@ class WSD_Model(pl.LightningModule):
   		# https://github.com/Lightning-AI/lightning/issues/4396
         preds = self.predict(batch)
         self.val_micro_f1.update(torch.tensor(preds), torch.tensor(labels))
-        self.log("val_micro_f1", self.val_micro_f1, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)
-        
-        
+        self.log("val_micro_f1", self.val_micro_f1, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)    
+  
+      
 class WSD_Gloss_Model(pl.LightningModule):
     def __init__(self, hparams):
-        super(WSD_Model, self).__init__()
+        super(WSD_Gloss_Model, self).__init__()
         self.save_hyperparameters(hparams)
         if self.hparams.encoder_type == "bert":
             self.encoder = BertModel.from_pretrained("bert-base-uncased")
@@ -181,11 +188,11 @@ class WSD_Gloss_Model(pl.LightningModule):
         # here we decide which parameters unfreeze
         if self.hparams.fine_tune_bert is True:
             if self.hparams.encoder_type == "bert":
-                unfreeze = [6,7,8,9,10,11] # (if we unfreeze more layers it is not guaranteed that the perforomance will improve!)
+                unfreeze = [10,11]
             elif self.hparams.encoder_type == "roberta":
-                unfreeze = [10,11] # 7,8,9
+                unfreeze = [10,11]
             elif self.hparams.encoder_type == "deberta":
-                unfreeze = [10,11] # 8,9
+                unfreeze = [10,11]
             for i in unfreeze:
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
@@ -197,14 +204,16 @@ class WSD_Gloss_Model(pl.LightningModule):
         if self.hparams.act_fun == "silu":
             self.act_fun = nn.SiLU(inplace=True)
         self.dropout = nn.Dropout(self.hparams.dropout)
-        self.classifier = nn.Linear(self.hparams.hidden_dim, 2, bias=False) # final linear projection with no bias (BINARY CLASSIFICATION)
-        self.sigmoid = nn.Sigmoid()
+        self.classifier = nn.Linear(self.hparams.hidden_dim, 1, bias=False) # final linear projection with no bias (BINARY CLASSIFICATION)
         
         self.val_binary_micro_f1 = F1Score(task="binary", num_classes=2, average="micro")
        
     def forward(self, batch):
         text = batch["inputs"]
-        embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
+        if self.hparams.encoder_type == "roberta": # roberta doesn't need "token_type_ids"
+            embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], output_hidden_states=True)
+        else:
+            embed_text = self.encoder(text["input_ids"], attention_mask=text["attention_mask"], token_type_ids=text["token_type_ids"], output_hidden_states=True)
         # I take the hidden representation of the last four layers of each token
         if self.hparams.sum_or_mean == "sum":
             embed_text = torch.stack(embed_text.hidden_states[-4:], dim=0).sum(dim=0)
@@ -223,8 +232,9 @@ class WSD_Gloss_Model(pl.LightningModule):
         
         encoder_output_norm = self.batch_norm(encoder_output)
         hidden_output = self.dropout(self.act_fun(self.hidden_MLP(encoder_output_norm)))
+        output = self.classifier(hidden_output)
         
-        return self.sigmoid(self.classifier(hidden_output)) # apply sigmoid function to the final output!
+        return output.squeeze(1)
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.hparams.lr, eps=self.hparams.adam_eps, weight_decay=self.hparams.wd)
@@ -239,8 +249,8 @@ class WSD_Gloss_Model(pl.LightningModule):
         }
 
     def loss_function(self, outputs, labels):
-        binary_cross_entropy_loss = nn.BCELoss()
-        labels = torch.tensor(labels).to(self.device)
+        binary_cross_entropy_loss = nn.BCEWithLogitsLoss()
+        labels = torch.tensor(labels).to(self.device).float()
         loss = binary_cross_entropy_loss(outputs, labels)
         return {"loss": loss}
     

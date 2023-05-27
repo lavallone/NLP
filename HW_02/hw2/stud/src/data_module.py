@@ -112,11 +112,12 @@ class WSD_Dataset(Dataset):
         return self.data[idx]
     
 class WSD_Gloss_Dataset(Dataset):
-    def __init__(self, data_sentences, data_senses, coarse_or_fine, fine2coarse_path, sense_map_path):
+    def __init__(self, data_sentences, data_senses, coarse_or_fine, sense2id_path, fine2coarse_path, sense_map_path):
         self.data = list()
         self.data_sentences = data_sentences
         self.data_senses = data_senses
         self.coarse_or_fine = coarse_or_fine
+        self.sense2id = json.load(open(sense2id_path, "r"))
         self.fine2coarse = json.load(open(fine2coarse_path, "r"))
         self.sense_map = json.load(open(sense_map_path, "r"))
         self.make_data()
@@ -128,25 +129,34 @@ class WSD_Gloss_Dataset(Dataset):
                     sense_idx = int(sense_idx)
                     context_sentence = " ".join(d["words"])
                     
+                    is_unk = False
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
-                        if c not in self.sense2id.keys(): # if the candidate sense is not in the sense inventory, we don't load the item
-                            continue
+                        if c not in self.sense2id.keys(): # if the candidate sense is not in the sense inventory, we load none of the samples!
+                            self.data.append({"id" : id, "synset" : "UNK", "sense_idx" : 0, "input": "UNK"})
+                            is_unk = True
+                            break
                         else:
                             candidates.append(c)
+                    
+                    if is_unk: # if we find at least one candidate that is not in the inventory, we exit the loop!
+                        continue
                             
                     if self.coarse_or_fine == "fine":
                         # we reached all the respective coarse-grained senses
                         coarse_candidates = list(set([ self.fine2coarse[c] for c in candidates]))
                         for c in coarse_candidates:
-                            for fine_sense, fine_gloss in self.sense_map[c].items():
+                            for fine_dict in self.sense_map[c]:
+                                fine_sense = list(fine_dict.keys())[0]
+                                fine_gloss = (list(fine_dict.values())[0]).lower()
                                 input_sentence = [context_sentence, fine_gloss]
                                 self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence})
 
                     else: # coarse case where we need to concatenate all the fine-grained glosses
                         for c in candidates:
                             concatenated_glosses_list = []
-                            for fine_gloss in self.sense_map[c].values():
+                            for fine_dict in self.sense_map[c]:
+                                fine_gloss = (list(fine_dict.values())[0]).lower()
                                 concatenated_glosses_list.append(fine_gloss)
                             concatenated_glosses = " ".join(concatenated_glosses_list)
                             input_sentence = [context_sentence, concatenated_glosses]
@@ -158,18 +168,26 @@ class WSD_Gloss_Dataset(Dataset):
                     context_sentence = " ".join(d["words"])
                     
                     true_sense = true_sense[0]
+                    is_unk = False
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
-                        if c not in self.sense2id.keys():  # if the candidate sense is not in the sense inventory, we don't load the item
-                            continue
+                        if c not in self.sense2id.keys(): # if the candidate sense is not in the sense inventory, we load none of the samples!
+                            self.data.append({"id" : id, "synset" : "UNK", "sense_idx" : 0, "input": "UNK", "label" : 0})
+                            is_unk = True
+                            break
                         else:
                             candidates.append(c)
+        
+                    if is_unk: # if we find at least one candidate that is not in the inventory, we exit the loop!
+                        continue
                             
                     if self.coarse_or_fine == "fine":
                         # we reached all the respective coarse-grained senses
                         coarse_candidates = list(set([ self.fine2coarse[c] for c in candidates]))
                         for c in coarse_candidates:
-                            for fine_sense, fine_gloss in self.sense_map[c].items():
+                            for fine_dict in self.sense_map[c]:
+                                fine_sense = list(fine_dict.keys())[0]
+                                fine_gloss = (list(fine_dict.values())[0]).lower()
                                 input_sentence = [context_sentence, fine_gloss]
                                 if fine_sense != true_sense: # not the true sense
                                     self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
@@ -179,7 +197,8 @@ class WSD_Gloss_Dataset(Dataset):
                     else: # coarse case where we need to concatenate all the fine-grained glosses
                         for c in candidates:
                             concatenated_glosses_list = []
-                            for fine_gloss in self.sense_map[c].values():
+                            for fine_dict in self.sense_map[c]:
+                                fine_gloss = (list(fine_dict.values())[0]).lower()
                                 concatenated_glosses_list.append(fine_gloss)
                             concatenated_glosses = " ".join(concatenated_glosses_list)
                             input_sentence = [context_sentence, concatenated_glosses]
@@ -187,7 +206,6 @@ class WSD_Gloss_Dataset(Dataset):
                                 self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
                             else:
                                 self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence, "label" : 1})
-                        
 
     def __len__(self):
         return len(self.data)
@@ -282,7 +300,7 @@ class WSD_DataModule(pl.LightningDataModule):
             tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["label"] for sample in batch]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
@@ -321,18 +339,34 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
         if self.is_predict is True: # only prediction
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = WSD_Gloss_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, coarse_or_fine=self.hparams.coarse_or_fine, fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+            self.data_test = WSD_Gloss_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, 
+                                               coarse_or_fine=self.hparams.coarse_or_fine, 
+                                               sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
+                                               fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
+                                               sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
         else:
             # TRAIN
             clean_tokens(self.train_sentences)
             self.train_sentences, self.train_senses = filter_sentences(self.train_sentences, self.train_senses)
-            self.data_train = WSD_Gloss_Dataset(data_sentences=self.train_sentences, data_senses=self.train_senses, coarse_or_fine=self.hparams.coarse_or_fine, fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+            self.data_train = WSD_Gloss_Dataset(data_sentences=self.train_sentences, data_senses=self.train_senses, 
+                                                coarse_or_fine=self.hparams.coarse_or_fine, 
+                                                sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
+                                                fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
+                                                sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
             # VAL
             clean_tokens(self.val_sentences)
-            self.data_val = WSD_Gloss_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, coarse_or_fine=self.hparams.coarse_or_fine, fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+            self.data_val = WSD_Gloss_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, 
+                                              coarse_or_fine=self.hparams.coarse_or_fine, 
+                                              sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
+                                              fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
+                                              sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
             # TEST
             clean_tokens(self.test_sentences)
-            self.data_test = WSD_Gloss_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, coarse_or_fine=self.hparams.coarse_or_fine, fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+            self.data_test = WSD_Gloss_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, 
+                                               coarse_or_fine=self.hparams.coarse_or_fine, 
+                                               sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
+                                               fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
+                                               sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
 
     def train_dataloader(self):
         return DataLoader(
@@ -391,7 +425,7 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
         batch_out["synsets"] = [sample["synset"] for sample in batch]
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["label"] for sample in batch]
         return batch_out
     
@@ -408,5 +442,5 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
         batch_out["synsets"] = [sample["synset"] for sample in batch]
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token to embedding indices
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         return batch_out

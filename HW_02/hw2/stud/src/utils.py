@@ -90,14 +90,14 @@ def predict_aux(senses_each_sentence, preds_list):
 # when predicting using glosses I cannot reason considering single batches!
 # That's because the sense candidates could be on different batches and the 
 # output comparison would be impossible!
-def gloss_predict(model, data, coarse_or_fine):
+def gloss_predict(model, data, coarse_or_fine, predict_coarse_with_fine, hard_words_candidates_set=None):
+    assert not predict_coarse_with_fine or coarse_or_fine=="fine"
     outputs_list = []
     for batch in tqdm(data.test_dataloader()):
         outputs = model(batch)
         for i in range(len(outputs)):
-            out = torch.max(outputs[i], dim=0)
-            outputs_list.append( (batch["ids"][i], batch["synsets"][i], float(out.item())) )
-    # outputs_list is a list in this form --> [ (id, sigmoid_output), ...] for example [("d014.s014.t000", 0.67), ...]
+            outputs_list.append( (batch["ids"][i], batch["synsets"][i], float(outputs[i].item())) )
+    # outputs_list is a list in this form --> [ (id, synset_name, sigmoid_output), ...] for example [("d014.s014.t000", 0.67), ...]
     
     grouped_outputs_list = []
     id_list = {"outputs" : [], "synsets" : []}
@@ -112,19 +112,31 @@ def gloss_predict(model, data, coarse_or_fine):
             id_list = {"outputs" : [out], "synsets" : [synset]}
         
     preds_list = []
+    hard_words_ids = []
+    c = 0
     for e in grouped_outputs_list:
-        i = torch.argmax(torch.tensor(e["outputs"]), dim=0)
-        predicted_sense = e["synsets"][int(i.item())]
-        preds_list.append(predicted_sense)
+        if hard_words_candidates_set is not None:
+            if set(e["synsets"]) in hard_words_candidates_set:
+                i = torch.argmax(torch.tensor(e["outputs"]), dim=0)
+                predicted_sense = e["synsets"][int(i.item())]
+                preds_list.append(predicted_sense)
+                hard_words_ids.append(c)
+        else:
+            i = torch.argmax(torch.tensor(e["outputs"]), dim=0)
+            predicted_sense = e["synsets"][int(i.item())]
+            preds_list.append(predicted_sense) 
+        c+=1
+    # in this way the words which have at least one candidate sense that in <UNK> are predicted "UNK"
+    # and indeed the system will make a wrong prediction!
     
-    # if we predicted fine-grained senses we need to retrieve the coarse-grained ones!
-    if coarse_or_fine == "fine":
+    # if we predicted fine-grained senses and the task is to predict coarse-grained senses
+    # we need to retrieve the coarse-grained ones!
+    if coarse_or_fine == "fine" and predict_coarse_with_fine:
         fine2coarse = json.load(open(model.hparams.prefix_path+"model/files/fine2coarse.json", "r"))
         preds_list = [fine2coarse[e] for e in preds_list]
+    return preds_list, hard_words_ids
 
-    return preds_list
-
-def evaluation_pipeline(model, data, additional_infos=False, use_gloss=False):
+def evaluation_pipeline(model, data, use_gloss=False, hard_words_candidates_set=None):
     test_micro_f1 = F1Score(task="multiclass", num_classes=model.hparams.num_senses, average="micro")
     
     model.eval()
@@ -133,14 +145,28 @@ def evaluation_pipeline(model, data, additional_infos=False, use_gloss=False):
         if use_gloss is False:
             for batch in tqdm(data.test_dataloader()):
                 preds = model.predict(batch)
-                preds_list += preds
-                labels_list += batch["labels"]
+                if hard_words_candidates_set is not None: # in this case we are predicting a list and not a list of lists
+                    for i in range(len(batch["candidates"])):
+                        if set(batch["candidates"][i]) in hard_words_candidates_set:
+                            preds_list.append(preds[i])
+                            labels_list.append(batch["labels"][i])
+                else:
+                    preds_list += preds
+                    labels_list += batch["labels"]
         else:
+            preds_list, hard_words_ids = gloss_predict(model, data, model.hparams.coarse_or_fine, model.hparams.predict_coarse_with_fine, hard_words_candidates_set)
+            c = 0
             for batch in tqdm(data.test_dataloader()):
-                for i in range(batch["labels"]):
+                for i in range(len(batch["labels"])):
                     if batch["labels"][i] == 1:
-                        labels_list.append(batch["synsets"][i])
-            preds_list = gloss_predict(model, data, model.hparams.coarse_or_fine)
+                        if hard_words_candidates_set is not None:
+                            if c == hard_words_ids[0]:
+                                labels_list.append(batch["synsets"][i])
+                                hard_words_ids.pop(0)
+                        else:
+                            labels_list.append(batch["synsets"][i])
+                    c+=1
+            preds_list = gloss_predict(model, data, model.hparams.coarse_or_fine, model.hparams.predict_coarse_with_fine, hard_words_candidates_set)
         
         test_micro_f1 = test_micro_f1(torch.tensor(preds_list), torch.tensor(labels_list)).item()
         print()
@@ -148,13 +174,12 @@ def evaluation_pipeline(model, data, additional_infos=False, use_gloss=False):
         
         # If I want to have/display additional infos about my models performance and 
         # to understand their weaknesses!
-        if additional_infos is True:
-            if use_gloss is False:
-                id2sense = json.load(open(model.hparams.prefix_path+"model/files/"+model.hparams.coarse_or_fine+"_id2sense.json", "r"))
-                for i in range(len(preds_list)):
-                    preds_list[i] = id2sense[str(preds_list[i])]
-                    labels_list[i] = id2sense[str(labels_list[i])]
-            print()
-            print(classification_report(labels_list, preds_list, digits=4))
-            output_dict = classification_report(labels_list, preds_list, digits=4, output_dict=True)
-            return output_dict # in order to be able to make some statistics
+        if use_gloss is False:
+            id2sense = json.load(open(model.hparams.prefix_path+"model/files/"+model.hparams.coarse_or_fine+"_id2sense.json", "r"))
+            for i in range(len(preds_list)):
+                preds_list[i] = id2sense[str(preds_list[i])]
+                labels_list[i] = id2sense[str(labels_list[i])]
+        print()
+        print(classification_report(labels_list, preds_list, digits=4))
+        output_dict = classification_report(labels_list, preds_list, digits=4, output_dict=True)
+        return output_dict # in order to be able to make some statistics
