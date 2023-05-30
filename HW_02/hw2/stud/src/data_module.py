@@ -1,5 +1,6 @@
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from torch.utils.data import DataLoader, Dataset
 import pytorch_lightning as pl
 import json
@@ -39,6 +40,7 @@ def filter_sentences(train_sentences, train_senses, min_sent_length=5, max_sent_
     return ris1, ris2
 
 ## MAPPING BETWEEN INPUT WORD INDEX AND BERT EMBEDDING INDECES
+## (needed after the encoding part to combine the embeddings relative to the same input token!)
 def token2emb_idx(sense_idx, word_ids):
     ris = []
     i = 0
@@ -64,7 +66,8 @@ class WSD_Dataset(Dataset):
     
     def make_data(self):
         for i,d in enumerate(self.data_sentences):
-            if self.data_senses is None: # we are predicting
+            # only PREDICTION
+            if self.data_senses is None: 
                 for sense_idx in d["instance_ids"].keys():
                     sense_idx = int(sense_idx)
                     if self.use_lemmas:
@@ -78,13 +81,15 @@ class WSD_Dataset(Dataset):
                     
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
+                        # ___________________ <UNK> senses handling ________________
                         if c not in self.sense2id.keys():
-                            candidates.append(self.sense2id["<UNK>"]) # <UNK> INDEX (2158)
+                            candidates.append(self.sense2id["<UNK>"]) # <UNK> INDEX
+                        # __________________________________________________________
                         else:
                             candidates.append(self.sense2id[c])
                     self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "candidates" : candidates})
             
-            else: # we are not predicting   
+            else: # we also have LABELS
                 for sense_idx, true_sense in zip(d["instance_ids"].keys(), self.data_senses[i]):
                     sense_idx = int(sense_idx)
                     if self.use_lemmas:
@@ -99,8 +104,10 @@ class WSD_Dataset(Dataset):
                     true_sense = self.sense2id[true_sense[0]]
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
+                        # ___________________ <UNK> senses handling ________________
                         if c not in self.sense2id.keys():
-                            candidates.append(self.sense2id["<UNK>"]) # <UNK> INDEX (2158)
+                            candidates.append(self.sense2id["<UNK>"]) # <UNK> INDEX
+                        # __________________________________________________________
                         else:
                             candidates.append(self.sense2id[c])
                     self.data.append({"sense_idx" : sense_idx, "input": input_sentence, "label" : true_sense, "candidates" : candidates})
@@ -124,35 +131,39 @@ class WSD_Gloss_Dataset(Dataset):
     
     def make_data(self):
         for i,d in enumerate(self.data_sentences):
-            if self.data_senses is None: # we are predicting
+            # only PREDICTION
+            if self.data_senses is None:
                 for sense_idx, id in d["instance_ids"].items():
                     sense_idx = int(sense_idx)
                     context_sentence = " ".join(d["words"])
                     
+                    # _________________________________ <UNK> senses handling _________________________________
                     is_unk = False
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
-                        if c not in self.sense2id.keys(): # if the candidate sense is not in the sense inventory, we load none of the samples!
-                            self.data.append({"id" : id, "synset" : "UNK", "sense_idx" : 0, "input": "UNK"})
+                        # if the candidate sense is not in the sense inventory, we load none of the samples!
+                        if c not in self.sense2id.keys():
+                            self.data.append({"id" : id, "synset" : "<UNK>", "sense_idx" : 0, "input": "UNK"})
                             is_unk = True
                             break
                         else:
                             candidates.append(c)
-                    
-                    if is_unk: # if we find at least one candidate that is not in the inventory, we exit the loop!
+                    # if we find at least one candidate that is not in the inventory, we exit the loop!
+                    if is_unk:
                         continue
+                    # _________________________________________________________________________________________
                             
                     if self.coarse_or_fine == "fine":
-                        # we reached all the respective coarse-grained senses
+                        # we list all the respective coarse-grained senses
                         coarse_candidates = list(set([ self.fine2coarse[c] for c in candidates]))
                         for c in coarse_candidates:
                             for fine_dict in self.sense_map[c]:
                                 fine_sense = list(fine_dict.keys())[0]
-                                fine_gloss = (list(fine_dict.values())[0]).lower()
+                                fine_gloss = (list(fine_dict.values())[0]).lower() # I just lower case each fine gloss
                                 input_sentence = [context_sentence, fine_gloss]
                                 self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence})
 
-                    else: # coarse case where we need to concatenate all the fine-grained glosses
+                    else: # coarse case where we need to concatenate all the fine-grained glosses (not very effective)
                         for c in candidates:
                             concatenated_glosses_list = []
                             for fine_dict in self.sense_map[c]:
@@ -162,39 +173,42 @@ class WSD_Gloss_Dataset(Dataset):
                             input_sentence = [context_sentence, concatenated_glosses]
                             self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence})
             
-            else: # we are not predicting
+            else: # we also have LABELS
                 for (sense_idx, id), true_sense in zip(d["instance_ids"].items(), self.data_senses[i]):
                     sense_idx = int(sense_idx)
                     context_sentence = " ".join(d["words"])
                     
                     true_sense = true_sense[0]
+                    # _________________________________ <UNK> senses handling _________________________________
                     is_unk = False
                     candidates = []
                     for c in d["candidates"][str(sense_idx)]:
-                        if c not in self.sense2id.keys(): # if the candidate sense is not in the sense inventory, we load none of the samples!
-                            self.data.append({"id" : id, "synset" : "UNK", "sense_idx" : 0, "input": "UNK", "label" : 0})
+                        # if the candidate sense is not in the sense inventory, we load none of the samples!
+                        if c not in self.sense2id.keys():
+                            self.data.append({"id" : id, "synset" : "<UNK>", "sense_idx" : 0, "input": "UNK", "label" : 0})
                             is_unk = True
                             break
                         else:
                             candidates.append(c)
-        
-                    if is_unk: # if we find at least one candidate that is not in the inventory, we exit the loop!
+                    # if we find at least one candidate that is not in the inventory, we exit the loop!
+                    if is_unk:
                         continue
+                    # _________________________________________________________________________________________
                             
                     if self.coarse_or_fine == "fine":
-                        # we reached all the respective coarse-grained senses
+                        # we list all the respective coarse-grained senses
                         coarse_candidates = list(set([ self.fine2coarse[c] for c in candidates]))
                         for c in coarse_candidates:
                             for fine_dict in self.sense_map[c]:
                                 fine_sense = list(fine_dict.keys())[0]
                                 fine_gloss = (list(fine_dict.values())[0]).lower()
                                 input_sentence = [context_sentence, fine_gloss]
-                                if fine_sense != true_sense: # not the true sense
-                                    self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
-                                else:
+                                if fine_sense == true_sense: # it's the TRUE sense --> we append 1!
                                     self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence, "label" : 1})
+                                else:
+                                    self.data.append({"id" : id, "synset" : fine_sense, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
 
-                    else: # coarse case where we need to concatenate all the fine-grained glosses
+                    else: # coarse case where we need to concatenate all the fine-grained glosses (not very effective)
                         for c in candidates:
                             concatenated_glosses_list = []
                             for fine_dict in self.sense_map[c]:
@@ -202,10 +216,10 @@ class WSD_Gloss_Dataset(Dataset):
                                 concatenated_glosses_list.append(fine_gloss)
                             concatenated_glosses = " ".join(concatenated_glosses_list)
                             input_sentence = [context_sentence, concatenated_glosses]
-                            if c != true_sense: # not the true sense
-                                self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
-                            else:
+                            if c == true_sense: # it's the TRUE sense --> we append 1!
                                 self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence, "label" : 1})
+                            else:
+                                self.data.append({"id" : id, "synset" : c, "sense_idx" : sense_idx, "input": input_sentence, "label" : 0})
 
     def __len__(self):
         return len(self.data)
@@ -298,8 +312,9 @@ class WSD_DataModule(pl.LightningDataModule):
             tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
         elif self.hparams.encoder_type == "deberta":
             tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
+        # notice that I used FastTokenizers because they have 'word_ids()' method which I need for the token-embedddings mapping!
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
-        # we now map token to embedding indices
+        # we now map token idx to embedding indices (from sense_idx to sense_ids)
         batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["label"] for sample in batch]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
@@ -314,13 +329,13 @@ class WSD_DataModule(pl.LightningDataModule):
             tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
         elif self.hparams.encoder_type == "deberta":
             tokenizer = DebertaTokenizerFast.from_pretrained("microsoft/deberta-base")
+        # notice that I used FastTokenizers because they have 'word_ids()' method which I need for the token-embedddings mapping!
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
-        # we now map token to embedding indices
+        # we now map token idx to embedding indices (from sense_idx to sense_ids)
         batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
 
- 
 class WSD_Gloss_DataModule(pl.LightningDataModule):
     def __init__(self, hparams, is_predict=False, sentence_to_predict=None):
         super().__init__()
@@ -412,7 +427,6 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
                 persistent_workers=True
             )
     
-    # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
     def collate(self, batch):
         batch_out = dict()
         if self.hparams.encoder_type == "bert":
@@ -424,12 +438,10 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
         batch_out["ids"] = [sample["id"] for sample in batch]
         batch_out["synsets"] = [sample["synset"] for sample in batch]
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
-        # we now map token to embedding indices
         batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         batch_out["labels"] = [sample["label"] for sample in batch]
         return batch_out
     
-    # for efficiency reasons, each time we pick a batch from the dataloader, we call this function!
     def pred_collate(self, batch):
         batch_out = dict()
         if self.hparams.encoder_type == "bert":
@@ -441,6 +453,5 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
         batch_out["ids"] = [sample["id"] for sample in batch]
         batch_out["synsets"] = [sample["synset"] for sample in batch]
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
-        # we now map token to embedding indices
         batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         return batch_out

@@ -5,10 +5,11 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pytorch_lightning as pl
 from transformers import BertModel, RobertaModel, DebertaModel
 from torchmetrics import F1Score
+import copy
 import json
 
 class WSD_Model(pl.LightningModule):
-    def __init__(self, hparams, coarse_filter_model=None):
+    def __init__(self, hparams):
         super(WSD_Model, self).__init__()
         self.save_hyperparameters(hparams)
         if self.hparams.encoder_type == "bert":
@@ -42,16 +43,18 @@ class WSD_Model(pl.LightningModule):
         self.dropout = nn.Dropout(self.hparams.dropout)
         self.classifier = nn.Linear(self.hparams.hidden_dim, self.hparams.num_senses, bias=False) # final linear projection with no bias
         
+        # for the validation phase we use micro F1 score to trace model's performances!
+        # for the testing phase, as suggested by TAs, I'll use the ACCURACY metrics (that's actually equivalent to micro F1 score in our case)
         self.val_micro_f1 = F1Score(task="multiclass", num_classes=self.hparams.num_senses, average="micro")
         
-        if self.hparams.coarse_loss_oriented or self.hparams.predict_coarse_with_fine:
-            self.fine2coarse = json.load(open(self.hparams.prefix_path+"model/files/fine2coarse.json", "r"))
-            self.fine_id2sense = json.load(open(self.hparams.prefix_path+"model/files/fine_id2sense.json", "r"))
-            
-        if self.hparams.predict_fine_with_coarse_filter:
-            self.coarse_filter_model = coarse_filter_model
-            self.coarse2fine = json.load(open(self.hparams.prefix_path+self.hparams.sense_map, "r"))
-            self.fine_sense2id = json.load(open(self.hparams.prefix_path+"model/files/fine_sense2id.json", "r"))
+        # needed them for all the different train/predict strategies I develop
+        self.fine2coarse = json.load(open(self.hparams.prefix_path+"model/files/fine2coarse.json", "r"))
+        self.coarse2fine = json.load(open(self.hparams.prefix_path+self.hparams.sense_map, "r"))
+        self.fine_id2sense = json.load(open(self.hparams.prefix_path+"model/files/fine_id2sense.json", "r"))
+        self.fine_sense2id = json.load(open(self.hparams.prefix_path+"model/files/fine_sense2id.json", "r"))
+        self.coarse_sense2id = json.load(open(self.hparams.prefix_path+"model/files/coarse_sense2id.json", "r"))
+        self.coarse_id2sense = json.load(open(self.hparams.prefix_path+"model/files/coarse_id2sense.json", "r"))
+        self.coarse_filter_model = None
         
         self.first_sense_statistic = 0 # I count all the time the model predict the first sense (the most frequent one) without considering the sets with only one candidate!   
        
@@ -93,75 +96,96 @@ class WSD_Model(pl.LightningModule):
                 "frequency": 1
             },
         }
-        
+    
+    # additional loss to be added (eventually) to the cross-entropy loss during fine-grained models
+    # training in order to guide them towards the correct coarse-grained sense!
+    # It will hopefully boosts performances when predicting coarse senses using fine-grained models! 
     def coarse_loss_oriented(self, outputs, labels, candidates):
         add_loss = 0
         for i in range(len(outputs)):
             fine_candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]).to(self.device))
             fine_best_prediction = torch.argmax(fine_candidates_pred, dim=0)
-            coarse_best_prediction = self.fine2coarse[ self.fine_id2sense[candidates[i][fine_best_prediction.item()]] ]
-            
-            if coarse_best_prediction == self.fine2coarse[ self.fine_id2sense[labels[i]] ]:
+            coarse_best_prediction = self.fine2coarse[ self.fine_id2sense[str(candidates[i][fine_best_prediction.item()])] ]
+            # if the predicted coarse-grained sense from a fine-grained one is not correct, we give a negative reward (meaning we increment the loss)
+            if coarse_best_prediction is not self.fine2coarse[ self.fine_id2sense[str(labels[i].item())] ]:
                 add_loss += 1
-        return - add_loss/len(outputs)
+        return 10 * (add_loss/len(outputs))
 
+    # CROSS-ENTROPY
     def loss_function(self, outputs, labels, candidates):
         assert self.hparams.coarse_loss_oriented == False or self.hparams.coarse_or_fine == "fine"
         cross_entropy_loss = nn.CrossEntropyLoss()
         labels = torch.tensor(labels).to(self.device)
         loss = cross_entropy_loss(outputs, labels)
-        # I create an aditional loss which "rewards" the fine-grained model if predicts the correct homonym set
+        # I create another loss which "rewards" the fine-grained model if predicts the correct homonym set
         if self.hparams.coarse_loss_oriented:
-            loss += self.coarse_loss_oriented(outputs, labels, candidates)
-        return {"loss": loss}
+            add_loss = torch.tensor(self.coarse_loss_oriented(outputs, labels, candidates), dtype=torch.float32, requires_grad=True, device=self.device)
+            loss += add_loss
+        return loss
     
     def training_step(self, batch, batch_idx):
         labels = batch["labels"]
         outputs = self(batch)
+        
         loss = self.loss_function(outputs, labels, batch["candidates"])
-        self.log_dict(loss)
+        self.log_dict({"loss" : loss})
         # since we only monitor the loss for the training phase, we don't need to write additional 
         # code in the 'training_epoch_end' function!
-        return {'loss': loss['loss']}
+        return {'loss': loss}
 
     def predict(self, batch):
         assert self.hparams.predict_coarse_with_fine == False or self.hparams.coarse_or_fine == "fine"
         assert self.hparams.predict_fine_with_coarse_filter == False or self.hparams.coarse_or_fine == "fine"
         with torch.no_grad():
-            candidates = batch["candidates"]
             outputs = self(batch)
             ris = []
+            # when predicting fine-grained senses thanks to a coarse-grained model
             if self.hparams.predict_fine_with_coarse_filter:
-                coarse_filter_preds = self.coarse_filter_model.predict(batch)
+                # I first need to modify the batch for let the coarse model to make predictions
+                coarse_batch = copy.deepcopy(batch)
+                for i in range(len(coarse_batch["candidates"])):
+                    for j in range(len(coarse_batch["candidates"][i])):
+                        coarse_batch["candidates"][i][j] = self.coarse_sense2id[ self.fine2coarse[ self.fine_id2sense[str(coarse_batch["candidates"][i][j])] ] ]
+                    coarse_batch["candidates"][i] = list(set(coarse_batch["candidates"][i]))
+                coarse_filter_preds = self.coarse_filter_model.predict(coarse_batch)
+                
+                # as soon as we have the coarse-prediction computed, we only predict among fine senses belonging to this homonym set 
                 for i in range(len(outputs)):
-                    if 2158 in candidates[i]: # if in the candidates set there is at least one <UNK> sense, we directly predict <UNK> !
+                    # ___________________ <UNK> senses handling ________________
+                    if 2158 in batch["candidates"][i]:
+                        # if in the candidates set there is at least one <UNK> sense, we directly predict <UNK> !
                         ris.append(2158)
                         continue
-                    fine_senses = list((self.coarse2fine[coarse_filter_preds[i]]).keys())
+                    # __________________________________________________________
+                    fine_senses = [ list(d.keys())[0] for d in self.coarse2fine[ self.coarse_id2sense[str(coarse_filter_preds[i])] ] ]
                     fine_senses_ids = [self.fine_sense2id[e] for e in fine_senses]
                     candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(fine_senses_ids).to(self.device))
                     best_prediction = torch.argmax(candidates_pred, dim=0)
-                    ris.append(candidates[i][best_prediction.item()])
+                    ris.append(fine_senses_ids[best_prediction.item()])
             else:
                 for i in range(len(outputs)):
-                    if 2158 in candidates[i]: # if in the candidates set there is at least one <UNK> sense, we directly predict <UNK> !
+                    # ___________________ <UNK> senses handling ________________
+                    # if in the candidates set there is at least one <UNK> sense, we directly predict <UNK> !
+                    if 2158 in batch["candidates"][i]:
                         ris.append(2158)
                         continue
-                    candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(candidates[i]).to(self.device))
+                    # __________________________________________________________
+                    candidates_pred = torch.index_select(outputs[i], 0, torch.tensor(batch["candidates"][i]).to(self.device))
                     best_prediction = torch.argmax(candidates_pred, dim=0)
-                    if best_prediction == 0 and len(candidates[i]) != 1:
+                    if best_prediction == 0 and len(batch["candidates"][i]) != 1: # statistic purpose
                         self.first_sense_statistic += 1
+                    # if we want to predict coarse-grained from fine-grained!
                     if self.hparams.predict_coarse_with_fine == True:
-                        ris.append(self.fine2coarse[ self.fine_id2sense[candidates[i][best_prediction.item()]] ])
+                        ris.append(self.coarse_sense2id[ self.fine2coarse[ self.fine_id2sense[str(batch["candidates"][i][best_prediction.item()])] ] ])
                     else:
-                        ris.append(candidates[i][best_prediction.item()])
+                        ris.append(batch["candidates"][i][best_prediction.item()])
             return ris # list of predicted senses (expressed in indices)
- 
+    
     def validation_step(self, batch, batch_idx):
         labels = batch["labels"]
         outputs = self(batch)
         # LOSS
-        val_loss = self.loss_function(outputs, labels, batch["candidates"])["loss"]
+        val_loss = self.loss_function(outputs, labels, batch["candidates"])
         self.log("val_loss", val_loss, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)
         # F1-SCORE
         # good practice to follow with pytorch_lightning for logging values each iteration!
@@ -169,8 +193,7 @@ class WSD_Model(pl.LightningModule):
         preds = self.predict(batch)
         self.val_micro_f1.update(torch.tensor(preds), torch.tensor(labels))
         self.log("val_micro_f1", self.val_micro_f1, on_step=True, on_epoch=True, prog_bar=True, batch_size=self.hparams.batch_size)    
-  
-      
+     
 class WSD_Gloss_Model(pl.LightningModule):
     def __init__(self, hparams):
         super(WSD_Gloss_Model, self).__init__()
@@ -206,6 +229,8 @@ class WSD_Gloss_Model(pl.LightningModule):
         self.dropout = nn.Dropout(self.hparams.dropout)
         self.classifier = nn.Linear(self.hparams.hidden_dim, 1, bias=False) # final linear projection with no bias (BINARY CLASSIFICATION)
         
+        # for the validation phase we use binary micro F1 score to trace model's performances!
+        # for the testing phase, as suggested by TAs, I'll use the ACCURACY metrics computed over sense inventory
         self.val_binary_micro_f1 = F1Score(task="binary", num_classes=2, average="micro")
        
     def forward(self, batch):
@@ -233,7 +258,6 @@ class WSD_Gloss_Model(pl.LightningModule):
         encoder_output_norm = self.batch_norm(encoder_output)
         hidden_output = self.dropout(self.act_fun(self.hidden_MLP(encoder_output_norm)))
         output = self.classifier(hidden_output)
-        
         return output.squeeze(1)
 
     def configure_optimizers(self):
@@ -248,6 +272,7 @@ class WSD_Gloss_Model(pl.LightningModule):
             },
         }
 
+    # BINARY CROSS-ENTROPY
     def loss_function(self, outputs, labels):
         binary_cross_entropy_loss = nn.BCEWithLogitsLoss()
         labels = torch.tensor(labels).to(self.device).float()
@@ -263,13 +288,15 @@ class WSD_Gloss_Model(pl.LightningModule):
         # code in the 'training_epoch_end' function!
         return {'loss': loss['loss']}
 
+    # if the output is > 0.5 we predict 1, otherwise 0 (binary classification task)
     def predict(self, batch):
         with torch.no_grad():
             outputs = self(batch)
             ris = []
             for i in range(len(outputs)):
-                prediction = torch.argmax(outputs[i], dim=0)
-                ris.append(int(prediction.item()))
+                sigm = nn.Sigmoid()
+                prediction = 1 if sigm(outputs[i]).item() > 0.5 else 0 
+                ris.append(prediction)
             return ris
  
     def validation_step(self, batch, batch_idx):
