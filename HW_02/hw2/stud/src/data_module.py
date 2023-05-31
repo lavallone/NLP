@@ -332,7 +332,7 @@ class WSD_DataModule(pl.LightningDataModule):
         # notice that I used FastTokenizers because they have 'word_ids()' method which I need for the token-embedddings mapping!
         batch_out["inputs"] = tokenizer([sample["input"] for sample in batch], padding=True, truncation=True, return_tensors="pt")
         # we now map token idx to embedding indices (from sense_idx to sense_ids)
-        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["input"].word_ids(i)) for i in range(len(batch))]
+        batch_out["sense_ids"] = [token2emb_idx(batch[i]["sense_idx"], batch_out["inputs"].word_ids(i)) for i in range(len(batch))]
         batch_out["candidates"] = [sample["candidates"] for sample in batch]
         return batch_out
 
@@ -358,7 +358,7 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
                                                coarse_or_fine=self.hparams.coarse_or_fine, 
                                                sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
                                                fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
-                                               sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+                                               sense_map_path=self.hparams.prefix_path+"model/files/coarse_fine_defs_map.json")
         else:
             # TRAIN
             clean_tokens(self.train_sentences)
@@ -367,21 +367,21 @@ class WSD_Gloss_DataModule(pl.LightningDataModule):
                                                 coarse_or_fine=self.hparams.coarse_or_fine, 
                                                 sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
                                                 fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
-                                                sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+                                                sense_map_path=self.hparams.prefix_path+"model/files/coarse_fine_defs_map.json")
             # VAL
             clean_tokens(self.val_sentences)
             self.data_val = WSD_Gloss_Dataset(data_sentences=self.val_sentences, data_senses=self.val_senses, 
                                               coarse_or_fine=self.hparams.coarse_or_fine, 
                                               sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
                                               fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
-                                              sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+                                              sense_map_path=self.hparams.prefix_path+"model/files/coarse_fine_defs_map.json")
             # TEST
             clean_tokens(self.test_sentences)
             self.data_test = WSD_Gloss_Dataset(data_sentences=self.test_sentences, data_senses=self.test_senses, 
                                                coarse_or_fine=self.hparams.coarse_or_fine, 
                                                sense2id_path=self.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_sense2id.json", 
                                                fine2coarse_path=self.hparams.prefix_path+"model/files/fine2coarse.json", 
-                                               sense_map_path=self.hparams.prefix_path+self.hparams.sense_map)
+                                               sense_map_path=self.hparams.prefix_path+"model/files/coarse_fine_defs_map.json")
 
     def train_dataloader(self):
         return DataLoader(

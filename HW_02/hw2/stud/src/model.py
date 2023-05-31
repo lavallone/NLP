@@ -9,11 +9,12 @@ import copy
 import json
 
 class WSD_Model(pl.LightningModule):
-    def __init__(self, hparams):
+    def __init__(self, hparams, fine2coarse, coarse2fine, fine_id2sense, fine_sense2id, coarse_sense2id, coarse_id2sense):
         super(WSD_Model, self).__init__()
         self.save_hyperparameters(hparams)
         if self.hparams.encoder_type == "bert":
-            self.encoder = BertModel.from_pretrained("bert-base-uncased")
+            #self.encoder = BertModel.from_pretrained("bert-base-uncased") # "bert-large-uncased" if we want to try the largest model!
+            self.encoder = BertModel.from_pretrained("model/checkpoints") # in this way I load the pretrained BERT model not from the web each time
         elif self.hparams.encoder_type == "roberta":
             self.encoder = RobertaModel.from_pretrained("roberta-base")
         elif self.hparams.encoder_type == "deberta":
@@ -34,7 +35,7 @@ class WSD_Model(pl.LightningModule):
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
         
-        self.batch_norm = nn.BatchNorm1d(768)
+        self.batch_norm = nn.BatchNorm1d(768) # 1024 if the model is "large"
         self.hidden_MLP = nn.Linear(768, self.hparams.hidden_dim, bias=True)
         if self.hparams.act_fun == "relu":
             self.act_fun = nn.ReLU(inplace=True)
@@ -47,13 +48,13 @@ class WSD_Model(pl.LightningModule):
         # for the testing phase, as suggested by TAs, I'll use the ACCURACY metrics (that's actually equivalent to micro F1 score in our case)
         self.val_micro_f1 = F1Score(task="multiclass", num_classes=self.hparams.num_senses, average="micro")
         
-        # needed them for all the different train/predict strategies I develop
-        self.fine2coarse = json.load(open(self.hparams.prefix_path+"model/files/fine2coarse.json", "r"))
-        self.coarse2fine = json.load(open(self.hparams.prefix_path+self.hparams.sense_map, "r"))
-        self.fine_id2sense = json.load(open(self.hparams.prefix_path+"model/files/fine_id2sense.json", "r"))
-        self.fine_sense2id = json.load(open(self.hparams.prefix_path+"model/files/fine_sense2id.json", "r"))
-        self.coarse_sense2id = json.load(open(self.hparams.prefix_path+"model/files/coarse_sense2id.json", "r"))
-        self.coarse_id2sense = json.load(open(self.hparams.prefix_path+"model/files/coarse_id2sense.json", "r"))
+        # needed them for all the different train/predict strategies I developed
+        self.fine2coarse = fine2coarse
+        self.coarse2fine = coarse2fine
+        self.fine_id2sense = fine_id2sense
+        self.fine_sense2id = fine_sense2id
+        self.coarse_sense2id = coarse_sense2id
+        self.coarse_id2sense = coarse_id2sense
         self.coarse_filter_model = None
         
         self.first_sense_statistic = 0 # I count all the time the model predict the first sense (the most frequent one) without considering the sets with only one candidate!   
@@ -199,7 +200,8 @@ class WSD_Gloss_Model(pl.LightningModule):
         super(WSD_Gloss_Model, self).__init__()
         self.save_hyperparameters(hparams)
         if self.hparams.encoder_type == "bert":
-            self.encoder = BertModel.from_pretrained("bert-base-uncased")
+            self.encoder = BertModel.from_pretrained("bert-base-uncased") # "bert-large-uncased" if we want to try the largest model!
+            #self.encoder = BertModel.from_pretrained("model/checkpoints")
         elif self.hparams.encoder_type == "roberta":
             self.encoder = RobertaModel.from_pretrained("roberta-base")
         elif self.hparams.encoder_type == "deberta":
@@ -220,7 +222,7 @@ class WSD_Gloss_Model(pl.LightningModule):
                 for param in self.encoder.encoder.layer[i].parameters():
                     param.requires_grad = True
         
-        self.batch_norm = nn.BatchNorm1d(768)
+        self.batch_norm = nn.BatchNorm1d(768) # 1024 if the model is "large"
         self.hidden_MLP = nn.Linear(768, self.hparams.hidden_dim, bias=True)
         if self.hparams.act_fun == "relu":
             self.act_fun = nn.ReLU(inplace=True)

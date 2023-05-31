@@ -5,7 +5,7 @@ from model import Model
 from stud.src.hyperparameters import Hparams
 from stud.src.model import WSD_Model
 from stud.src.data_module import WSD_DataModule
-from stud.src.utils import predict_aux, gloss_predict
+from stud.src.utils import predict_aux
 import torch
 import json
 
@@ -39,7 +39,14 @@ class StudentModel(Model):
         self.hparams = hparams
         # load model and its weights!
         self.hparams.prefix_path = ""
-        self.model = WSD_Model.load_from_checkpoint(self.hparams.prefix_path+self.hparams.student_weights_path, strict=False, device=self.device)
+        model_args = {'fine2coarse': json.load(open(self.hparams.prefix_path+"model/files/fine2coarse.json", "r")), 
+                      'coarse2fine': json.load(open(self.hparams.prefix_path+"model/files/coarse_fine_defs_map.json", "r")),
+                      'fine_id2sense': json.load(open(self.hparams.prefix_path+"model/files/fine_id2sense.json", "r")),
+                      'fine_sense2id': json.load(open(self.hparams.prefix_path+"model/files/fine_sense2id.json", "r")),
+                      'coarse_sense2id': json.load(open(self.hparams.prefix_path+"model/files/coarse_sense2id.json", "r")),
+                      'coarse_id2sense': json.load(open(self.hparams.prefix_path+"model/files/coarse_id2sense.json", "r")),
+                      }
+        self.model = WSD_Model.load_from_checkpoint(self.hparams.prefix_path+self.hparams.student_weights_path, strict=False, device=self.device, **model_args)
     
     def predict(self, sentences: List[Dict]) -> List[List[str]]: # (I changed from List[List[str]] to List[Dict] because our dataset is a list of dictionaries!)
         # STUDENT: implement here your predict function
@@ -51,17 +58,14 @@ class StudentModel(Model):
         self.model.eval()
         with torch.no_grad():
             preds_list = []
-            if self.model.use_gloss is False:
-                for batch in data.test_dataloader():
-                    preds = self.model.predict(batch)
-                    preds_list += preds
-                    
-                # 1) let's first decode the predicted senses from indices to strings
-                id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_id2sense.json", "r"))
-                for i in range(len(preds_list)):
-                    preds_list[i] = id2sense[str(preds_list[i])]
-            else:
-                preds_list = gloss_predict(self.model, data, self.model.hparams.coarse_or_fine)
+            for batch in data.test_dataloader():
+                preds = self.model.predict(batch)
+                preds_list += preds
+                
+            # 1) let's first decode the predicted senses from indices to strings
+            id2sense = json.load(open(self.model.hparams.prefix_path+"model/files/"+self.hparams.coarse_or_fine+"_id2sense.json", "r"))
+            for i in range(len(preds_list)):
+                preds_list[i] = id2sense[str(preds_list[i])]
             
             # 2) now I have a unique list of predictions --> I need it to create a  list of lists where each
             #                                                sublist contains the sense of the words of the same sentence!
